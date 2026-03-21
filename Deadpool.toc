@@ -1,0 +1,16 @@
+## Interface: 20505
+## Title: |cFFCC0000D|readpoo|cFFCC0000l|r
+## Notes: Kill on Sight bounty tracker and world PvP scoreboard for guilds. The Merc with a Mouth's hit list.
+## Author: Evildz
+## Version: 1.0.0
+## SavedVariables: DeadpoolDB
+## OptionalDeps: ElvUI
+
+Core.lua
+Data.lua
+BountyManager.lua
+KillTracker.lua
+Sync.lua
+Theme.lua
+UI.lua
+Alerts.lua
