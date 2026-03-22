@@ -250,6 +250,58 @@ SlashCmdList["DEADPOOL"] = function(msg)
     elseif cmd == "debug" then
         Deadpool.db.settings.debug = not Deadpool.db.settings.debug
         Deadpool:Print("Debug mode: " .. (Deadpool.db.settings.debug and "ON" or "OFF"))
+    elseif cmd == "dedup" then
+        -- Remove duplicate kill log entries (same killer+victim within 10 seconds)
+        local killLog = Deadpool.db.killLog
+        local cleaned = {}
+        local seen = {}
+        local removed = 0
+        -- Sort by time first to ensure consistent ordering
+        table.sort(killLog, function(a, b) return (a.time or 0) < (b.time or 0) end)
+        for _, entry in ipairs(killLog) do
+            local key = (entry.killer or "") .. ">" .. (entry.victim or "")
+            if seen[key] and entry.time and seen[key].time and math.abs(entry.time - seen[key].time) < 10 then
+                removed = removed + 1
+            else
+                table.insert(cleaned, entry)
+                seen[key] = entry
+            end
+        end
+        -- Re-sort newest first
+        table.sort(cleaned, function(a, b) return (a.time or 0) > (b.time or 0) end)
+        Deadpool.db.killLog = cleaned
+
+        -- Recalculate scoreboard from clean kill log
+        Deadpool.db.scoreboard = {}
+        for _, k in ipairs(cleaned) do
+            local score = Deadpool:GetOrCreateScore(k.killer)
+            score.totalKills = (score.totalKills or 0) + 1
+            local pts = k.points or 5
+            score.totalPoints = (score.totalPoints or 0) + pts
+            if k.killType == "bounty" then
+                score.bountyKills = (score.bountyKills or 0) + 1
+            elseif k.killType == "kos" then
+                score.kosKills = (score.kosKills or 0) + 1
+            else
+                score.randomKills = (score.randomKills or 0) + 1
+            end
+            if not score.lastKill or (k.time or 0) > score.lastKill then
+                score.lastKill = k.time
+            end
+        end
+
+        -- Also recalculate KOS kill counts
+        for fullName, entry in pairs(Deadpool.db.kosList) do
+            entry.totalKills = 0
+        end
+        for _, k in ipairs(cleaned) do
+            if k.isKOS and Deadpool.db.kosList[k.victim] then
+                Deadpool.db.kosList[k.victim].totalKills = (Deadpool.db.kosList[k.victim].totalKills or 0) + 1
+            end
+        end
+
+        Deadpool:Print(Deadpool.colors.green .. "Dedup complete:|r removed " .. removed .. " duplicate kills. " .. #cleaned .. " remaining.")
+        if Deadpool.RefreshUI then Deadpool:RefreshUI() end
     elseif cmd == "demo" then
         -- Force wipe and regenerate demo data
         Deadpool.db._placeholderLoaded = nil

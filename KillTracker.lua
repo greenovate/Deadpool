@@ -108,6 +108,24 @@ function KillTracker:ProcessKillingBlow(sourceGUID, sourceName, sourceFlags, des
 
     if not victimFullName or not killerFullName then return end
 
+    -- Try to get victim level from target/nameplate if available
+    -- GetPlayerInfoByGUID doesn't return level in TBC Classic
+    if not victimLevel or victimLevel == 0 then
+        -- Check if victim is our current target
+        if UnitExists("target") and UnitName("target") == destName then
+            victimLevel = UnitLevel("target")
+        else
+            -- Check nameplates
+            for i = 1, 40 do
+                local unit = "nameplate" .. i
+                if UnitExists(unit) and UnitName(unit) == destName then
+                    victimLevel = UnitLevel(unit)
+                    break
+                end
+            end
+        end
+    end
+
     -- Check if the killer is us or a guild member
     local isOurKill = false
 

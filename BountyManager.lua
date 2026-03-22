@@ -232,6 +232,20 @@ function Deadpool:AwardKillPoints(killerFullName, victimFullName, killType, vict
         end
     end
 
+    -- Underdog bonus: killing someone higher level than you = bonus points
+    local myLevel = UnitLevel("player") or 0
+    if victimLevel and victimLevel > 0 and myLevel > 0 and victimLevel > myLevel then
+        local levelDiff = victimLevel - myLevel
+        if levelDiff >= 6 then
+            points = points * 3  -- 6+ levels higher = triple points
+        elseif levelDiff >= 3 then
+            points = points * 2  -- 3-5 levels higher = double points
+        else
+            points = math.floor(points * 1.5)  -- 1-2 levels = 50% bonus
+        end
+        points = math.floor(points)
+    end
+
     score.totalKills = score.totalKills + 1
     score.totalPoints = score.totalPoints + points
     score.lastKill = time()
