@@ -258,9 +258,27 @@ function Deadpool:AwardKillPoints(killerFullName, victimFullName, killType, vict
 end
 
 ----------------------------------------------------------------------
--- Kill recording (called by KillTracker)
+-- Kill recording (called by KillTracker and Sync)
+-- Deduplicates: same killer+victim within 10 seconds = skip
 ----------------------------------------------------------------------
+local recentKills = {}  -- ["killer-victim"] = timestamp
+
 function Deadpool:RecordKill(killerFullName, victimFullName, victimClass, victimRace, victimLevel, zone)
+    -- Deduplicate: if we already recorded this exact kill in the last 10 seconds, skip
+    local dedupKey = killerFullName .. ">" .. victimFullName
+    local now = time()
+    if recentKills[dedupKey] and (now - recentKills[dedupKey]) < 10 then
+        return
+    end
+    recentKills[dedupKey] = now
+
+    -- Clean old entries periodically
+    if now % 30 == 0 then
+        for k, t in pairs(recentKills) do
+            if (now - t) > 30 then recentKills[k] = nil end
+        end
+    end
+
     local isKOS = self:IsKOS(victimFullName)
     local hasBounty = self:HasActiveBounty(victimFullName)
 
