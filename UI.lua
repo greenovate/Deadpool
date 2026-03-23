@@ -377,6 +377,33 @@ function UI:CreateMainFrame()
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
+
+    StaticPopupDialogs["DEADPOOL_WIPE_SCOREBOARD"] = {
+        text = "RESET SCOREBOARD?\n\nThis will wipe all guild member scores and points.\nThis cannot be undone.",
+        button1 = "Reset", button2 = "Cancel",
+        OnAccept = function()
+            if not Deadpool:IsGM() then return end
+            Deadpool.db.scoreboard = {}
+            Deadpool:BumpSyncVersion()
+            Deadpool:Print(Deadpool.colors.red .. "Scoreboard has been reset.|r")
+            if Deadpool.RefreshUI then Deadpool:RefreshUI() end
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+
+    StaticPopupDialogs["DEADPOOL_WIPE_KILLLOG"] = {
+        text = "RESET KILL LOG?\n\nThis will wipe all recorded kills.\nThis cannot be undone.",
+        button1 = "Reset", button2 = "Cancel",
+        OnAccept = function()
+            if not Deadpool:IsGM() then return end
+            Deadpool.db.killLog = {}
+            Deadpool.db.deathLog = {}
+            Deadpool:BumpSyncVersion()
+            Deadpool:Print(Deadpool.colors.red .. "Kill log and death log have been reset.|r")
+            if Deadpool.RefreshUI then Deadpool:RefreshUI() end
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
 end
 
 ----------------------------------------------------------------------
@@ -1886,7 +1913,52 @@ function UI:BuildSettingsPanel()
 
     -- DEBUG
     Header("DEBUG", COL2, ry); ry = ry - 24
-    Check("Debug mode", "debug", COL2, ry)
+    Check("Debug mode", "debug", COL2, ry); ry = ry - 34
+
+    -- GM TOOLS
+    if isGM then
+        Header("GM TOOLS", COL2, ry); ry = ry - 26
+
+        local wipeScoreBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        wipeScoreBtn:SetSize(160, 20)
+        wipeScoreBtn:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        wipeScoreBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        wipeScoreBtn:SetBackdropColor(0.5, 0.05, 0.05, 0.9)
+        wipeScoreBtn:SetBackdropBorderColor(0.8, 0.1, 0.1, 0.6)
+        local wipeLbl = wipeScoreBtn:CreateFontString(nil, "OVERLAY")
+        wipeLbl:SetFont(TM:GetFont(10, "")); wipeLbl:SetPoint("CENTER")
+        wipeLbl:SetText(Deadpool.colors.red .. "Reset Scoreboard|r")
+        wipeScoreBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.7, 0.1, 0.1, 1)
+        end)
+        wipeScoreBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(0.5, 0.05, 0.05, 0.9)
+        end)
+        wipeScoreBtn:SetScript("OnClick", function()
+            StaticPopup_Show("DEADPOOL_WIPE_SCOREBOARD")
+        end)
+        ry = ry - 26
+
+        local wipeKillsBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        wipeKillsBtn:SetSize(160, 20)
+        wipeKillsBtn:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        wipeKillsBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        wipeKillsBtn:SetBackdropColor(0.5, 0.05, 0.05, 0.9)
+        wipeKillsBtn:SetBackdropBorderColor(0.8, 0.1, 0.1, 0.6)
+        local wipeKLbl = wipeKillsBtn:CreateFontString(nil, "OVERLAY")
+        wipeKLbl:SetFont(TM:GetFont(10, "")); wipeKLbl:SetPoint("CENTER")
+        wipeKLbl:SetText(Deadpool.colors.red .. "Reset Kill Log|r")
+        wipeKillsBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.7, 0.1, 0.1, 1)
+        end)
+        wipeKillsBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(0.5, 0.05, 0.05, 0.9)
+        end)
+        wipeKillsBtn:SetScript("OnClick", function()
+            StaticPopup_Show("DEADPOOL_WIPE_KILLLOG")
+        end)
+        ry = ry - 26
+    end
 
     -- Set scroll content height based on deepest column
     local maxDepth = math.max(math.abs(ly), math.abs(ry)) + 40

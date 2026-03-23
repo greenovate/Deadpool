@@ -110,6 +110,17 @@ function Deadpool:IsWarGuild(guildName)
     return warGuilds and warGuilds[guildName] == true
 end
 
+function Deadpool:IsAggressive(fullName)
+    local enemy = self.db.enemySheet[fullName]
+    if not enemy then return false end
+    if not enemy.isAggressive then return false end
+    if enemy.aggressiveUntil and time() > enemy.aggressiveUntil then
+        enemy.isAggressive = false
+        return false
+    end
+    return true
+end
+
 function Deadpool:IsWarGuildKOS(fullName)
     -- Returns true ONLY if this player is KOS because of a guild war (not manually added)
     if self.db.kosList[fullName] then return false end  -- manually on KOS, not war-based

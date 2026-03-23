@@ -43,6 +43,7 @@ function Nearby:TrackPlayer(name, guid, class, race, level, guild, isStealth)
     local fullName = Deadpool:NormalizeName(name)
     if not fullName then return end
 
+    local isNew = not tracked[fullName]
     local existing = tracked[fullName]
     if existing then
         existing.lastSeen = time()
@@ -65,6 +66,13 @@ function Nearby:TrackPlayer(name, guid, class, race, level, guild, isStealth)
             isStealth = isStealth or false,
             zone = Deadpool:GetZone(),
         }
+    end
+
+    -- Alert when an aggressive player appears nearby (first detection only)
+    if isNew and Deadpool:IsAggressive(fullName) then
+        local display = class and Deadpool:ClassColor(class, Deadpool:ShortName(fullName)) or Deadpool:ShortName(fullName)
+        Deadpool:Print(Deadpool.colors.orange .. "WARNING|r " .. display .. Deadpool.colors.orange .. " spotted nearby! (hostile)|r")
+        Deadpool:PlayPartyAttackSound()
     end
 end
 
@@ -535,6 +543,8 @@ end
 ----------------------------------------------------------------------
 function Nearby:UpdateWidget()
     if not widget or isMinimized then return end
+    -- Skip frame resizing during combat (protected function restriction)
+    if InCombatLockdown() then return end
 
     local TM = Deadpool.modules.Theme
     local t = TM.active
@@ -568,23 +578,31 @@ function Nearby:UpdateWidget()
             row._data = d
             row:Show()
 
-            -- Update secure target button macro
-            if row._secureBtn then
+            -- Update secure target button macro (only out of combat)
+            if row._secureBtn and not InCombatLockdown() then
                 local targetName = d.name or Deadpool:ShortName(d.fullName)
                 row._secureBtn:SetAttribute("macrotext", "/targetexact " .. targetName)
                 row._secureBtn:Show()
             end
 
-            -- KOS indicator
-            if Deadpool:IsKOS(d.fullName) then
+            -- KOS indicator (red bar) or Aggressive indicator (orange bar)
+            local isKOS = Deadpool:IsKOS(d.fullName)
+            local isAgg = Deadpool:IsAggressive(d.fullName)
+            if isKOS then
+                row._kosBar:SetColorTexture(1, 0, 0, 1)
+                row._kosBar:Show()
+            elseif isAgg then
+                row._kosBar:SetColorTexture(1, 0.5, 0, 1)
                 row._kosBar:Show()
             else
                 row._kosBar:Hide()
             end
 
-            -- Aggression indicator (red flash on name background when hostile is attacking)
+            -- Row background: red flash for active combat, orange tint for aggressive, default for others
             if d.isAggressive and d.aggressiveTime and (now - d.aggressiveTime) < 15 then
                 row._bg:SetColorTexture(0.5, 0.05, 0.05, 0.5)
+            elseif isAgg then
+                row._bg:SetColorTexture(0.3, 0.15, 0, 0.3)
             elseif i % 2 == 0 then
                 row._bg:SetColorTexture(t.bgAlt[1], t.bgAlt[2], t.bgAlt[3], t.bgAlt[4] or 0.3)
             else
@@ -668,7 +686,7 @@ function Nearby:UpdateWidget()
         else
             row:Hide()
             row._data = nil
-            if row._secureBtn then row._secureBtn:Hide() end
+            if row._secureBtn and not InCombatLockdown() then row._secureBtn:Hide() end
         end
     end
 end

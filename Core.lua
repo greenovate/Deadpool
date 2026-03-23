@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------
 
 Deadpool = {}
-Deadpool.version = "1.0.0"
+Deadpool.version = "1.1.1"
 Deadpool.prefix = "DEADPOOL"
 Deadpool.modules = {}
 
@@ -106,12 +106,11 @@ function Deadpool:NormalizeName(input)
     if input:find("-") then
         local n, r = input:match("^(.-)%-(.+)$")
         if n and r then
-            return n:sub(1,1):upper() .. n:sub(2):lower() .. "-" .. r
+            return n .. "-" .. r
         end
     end
     -- No realm given, use player's realm
-    local name = input:sub(1,1):upper() .. input:sub(2):lower()
-    return name .. "-" .. GetRealmName()
+    return input .. "-" .. GetRealmName()
 end
 
 function Deadpool:ShortName(fullName)

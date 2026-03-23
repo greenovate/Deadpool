@@ -253,16 +253,16 @@ function KillTracker:RecordDeath(killerFullName, victimFullName, killerClass, ki
             " in " .. Deadpool.colors.yellow .. zone .. "|r" ..
             " (" .. enemy.timesKilledUs .. "x total)")
         Deadpool:PlayDeathSound()
+
+        -- Auto-KOS: they KILLED YOU — that's KOS-worthy (only for your own deaths)
+        if Deadpool.db.settings.autoKOSOnAttack then
+            if not Deadpool:IsKOS(killerFullName) then
+                Deadpool:AddToKOS(killerFullName, "Auto-KOS: killed you")
+            end
+        end
     else
         -- Party/raid member died
         Deadpool:PlayPartyDeathSound()
-    end
-
-    -- Auto-KOS: they KILLED us — that's KOS-worthy
-    if Deadpool.db.settings.autoKOSOnAttack then
-        if not Deadpool:IsKOS(killerFullName) then
-            Deadpool:AddToKOS(killerFullName, "Auto-KOS: killed " .. Deadpool:ShortName(victimFullName))
-        end
     end
 
     if Deadpool.RefreshUI then Deadpool:RefreshUI() end
