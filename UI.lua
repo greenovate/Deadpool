@@ -2148,62 +2148,104 @@ end
 ----------------------------------------------------------------------
 function UI:CreateDashboardFrame()
     dashboardFrame = CreateFrame("Frame", nil, mainFrame)
-    dashboardFrame:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -80)
+    dashboardFrame:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
     dashboardFrame:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 28)
     dashboardFrame:Hide()
-
-    -- We'll create child elements in ThemeDashboard/RenderDashboard
     dashboardFrame.cards = {}
     dashboardFrame.bars = {}
+    dashboardFrame.panels = {}
     dashboardFrame.labels = {}
     dashboardFrame.initialized = false
 end
 
 ----------------------------------------------------------------------
--- Dashboard helper: create a stat card
+-- Dashboard helper: stat card with accent top bar
 ----------------------------------------------------------------------
 function UI:CreateStatCard(parent, x, y, w, h)
+    local t = Deadpool.modules.Theme.active
+    local TM = Deadpool.modules.Theme
+
     local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     card:SetSize(w, h)
     card:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
-
-    local t = Deadpool.modules.Theme.active
     card:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
     card:SetBackdropColor(t.bgAlt[1], t.bgAlt[2], t.bgAlt[3], t.bgAlt[4])
-    card:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.5)
+    card:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.3)
+
+    -- Accent top bar
+    local accentBar = card:CreateTexture(nil, "ARTWORK")
+    accentBar:SetHeight(2)
+    accentBar:SetPoint("TOPLEFT", 1, -1)
+    accentBar:SetPoint("TOPRIGHT", -1, -1)
+    accentBar:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.8)
+    card._accentBar = accentBar
 
     card.title = card:CreateFontString(nil, "OVERLAY")
-    card.title:SetFont(Deadpool.modules.Theme:GetHeaderFont())
-    card.title:SetPoint("TOPLEFT", 8, -6)
+    card.title:SetFont(TM:GetFont(8, "OUTLINE"))
+    card.title:SetPoint("TOP", 0, -6)
 
     card.value = card:CreateFontString(nil, "OVERLAY")
-    card.value:SetFont(Deadpool.modules.Theme:GetFont(22, "OUTLINE"))
-    card.value:SetPoint("CENTER", 0, -4)
+    card.value:SetFont(TM:GetFont(20, "OUTLINE"))
+    card.value:SetPoint("CENTER", 0, -2)
 
     card.subtitle = card:CreateFontString(nil, "OVERLAY")
-    card.subtitle:SetFont(Deadpool.modules.Theme:GetBodyFont())
-    card.subtitle:SetPoint("BOTTOM", 0, 6)
+    card.subtitle:SetFont(TM:GetFont(9, ""))
+    card.subtitle:SetPoint("BOTTOM", 0, 5)
     card.subtitle:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
 
     return card
 end
 
 ----------------------------------------------------------------------
+-- Dashboard helper: section panel with header
+----------------------------------------------------------------------
+function UI:CreateDashPanel(parent, x, y, w, h, title)
+    local t = Deadpool.modules.Theme.active
+    local TM = Deadpool.modules.Theme
+
+    local panel = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    panel:SetSize(w, h)
+    panel:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
+    panel:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    panel:SetBackdropColor(t.bgAlt[1] * 0.7, t.bgAlt[2] * 0.7, t.bgAlt[3] * 0.7, 0.5)
+    panel:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.2)
+
+    -- Header strip
+    local header = panel:CreateTexture(nil, "ARTWORK")
+    header:SetHeight(20)
+    header:SetPoint("TOPLEFT", 1, -1)
+    header:SetPoint("TOPRIGHT", -1, -1)
+    header:SetColorTexture(t.accent[1] * 0.15, t.accent[2] * 0.15, t.accent[3] * 0.15, 0.9)
+    panel._header = header
+
+    local headerText = panel:CreateFontString(nil, "OVERLAY")
+    headerText:SetFont(TM:GetFont(10, "OUTLINE"))
+    headerText:SetPoint("LEFT", header, "LEFT", 8, 0)
+    headerText:SetText(TM:AccentHex() .. title .. "|r")
+    panel._headerText = headerText
+
+    return panel
+end
+
+----------------------------------------------------------------------
 -- Dashboard helper: horizontal stat bar
 ----------------------------------------------------------------------
 function UI:CreateStatBar(parent, y, w)
-    local bar = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    bar:SetSize(w, 20)
-    bar:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -y)
-
     local t = Deadpool.modules.Theme.active
-    bar:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-    })
+    local TM = Deadpool.modules.Theme
+
+    local bar = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    bar:SetSize(w, 18)
+    bar:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -y)
+    bar:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
     bar:SetBackdropColor(t.barBg[1], t.barBg[2], t.barBg[3], t.barBg[4])
 
     bar.fill = bar:CreateTexture(nil, "ARTWORK")
@@ -2214,13 +2256,13 @@ function UI:CreateStatBar(parent, y, w)
     bar.fill:SetWidth(1)
 
     bar.label = bar:CreateFontString(nil, "OVERLAY")
-    bar.label:SetFont(Deadpool.modules.Theme:GetFont(11, "OUTLINE"))
+    bar.label:SetFont(TM:GetFont(10, "OUTLINE"))
     bar.label:SetPoint("LEFT", 6, 0)
     bar.label:SetShadowOffset(1, -1)
     bar.label:SetShadowColor(0, 0, 0, 1)
 
     bar.valueText = bar:CreateFontString(nil, "OVERLAY")
-    bar.valueText:SetFont(Deadpool.modules.Theme:GetFont(11, "OUTLINE"))
+    bar.valueText:SetFont(TM:GetFont(10, "OUTLINE"))
     bar.valueText:SetPoint("RIGHT", -6, 0)
     bar.valueText:SetShadowOffset(1, -1)
     bar.valueText:SetShadowColor(0, 0, 0, 1)
@@ -2242,13 +2284,27 @@ end
 function UI:ThemeDashboard()
     if not dashboardFrame then return end
     local t = Deadpool.modules.Theme.active
+    local TM = Deadpool.modules.Theme
     for _, card in pairs(dashboardFrame.cards) do
         card:SetBackdropColor(t.bgAlt[1], t.bgAlt[2], t.bgAlt[3], t.bgAlt[4])
-        card:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.5)
+        card:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.3)
+        if card._accentBar then
+            card._accentBar:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.8)
+        end
     end
     for _, bar in pairs(dashboardFrame.bars) do
         bar:SetBackdropColor(t.barBg[1], t.barBg[2], t.barBg[3], t.barBg[4])
         bar.fill:SetVertexColor(t.barFill[1], t.barFill[2], t.barFill[3], t.barFill[4])
+    end
+    for _, panel in pairs(dashboardFrame.panels) do
+        panel:SetBackdropColor(t.bgAlt[1] * 0.7, t.bgAlt[2] * 0.7, t.bgAlt[3] * 0.7, 0.5)
+        panel:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.2)
+        if panel._header then
+            panel._header:SetColorTexture(t.accent[1] * 0.15, t.accent[2] * 0.15, t.accent[3] * 0.15, 0.9)
+        end
+        if panel._headerText then
+            panel._headerText:SetText(TM:AccentHex() .. (panel._title or "") .. "|r")
+        end
     end
 end
 
@@ -2261,155 +2317,190 @@ function UI:RenderDashboard()
     local TM = Deadpool.modules.Theme
     local myName = Deadpool:GetPlayerFullName()
     local score = Deadpool:GetOrCreateScore(myName)
+    local accentHex = TM:AccentHex()
 
     -- Initialize static elements once
     if not dashboardFrame.initialized then
         dashboardFrame.initialized = true
 
-        -- Row 1: Stat cards
-        local cw = 130
-        local ch = 80
-        local gap = 10
-        dashboardFrame.cards.kills = self:CreateStatCard(dashboardFrame, 0, 0, cw, ch)
-        dashboardFrame.cards.kills.title:SetText("TOTAL KILLS")
-        dashboardFrame.cards.kos = self:CreateStatCard(dashboardFrame, cw + gap, 0, cw, ch)
-        dashboardFrame.cards.kos.title:SetText("KOS LIST")
-        dashboardFrame.cards.bounties = self:CreateStatCard(dashboardFrame, (cw + gap) * 2, 0, cw, ch)
-        dashboardFrame.cards.bounties.title:SetText("BOUNTIES")
-        dashboardFrame.cards.points = self:CreateStatCard(dashboardFrame, (cw + gap) * 3, 0, cw, ch)
-        dashboardFrame.cards.points.title:SetText("YOUR POINTS")
-        dashboardFrame.cards.rank = self:CreateStatCard(dashboardFrame, (cw + gap) * 4, 0, cw, ch)
-        dashboardFrame.cards.rank.title:SetText("YOUR RANK")
-        dashboardFrame.cards.enemies = self:CreateStatCard(dashboardFrame, (cw + gap) * 5, 0, cw, ch)
-        dashboardFrame.cards.enemies.title:SetText("ENEMIES")
+        local fw = dashboardFrame:GetWidth() or 910
+        local halfW = math.floor((fw - 10) / 2)
 
-        -- Section: Top Killers (left column bars)
-        local lblTop = dashboardFrame:CreateFontString(nil, "OVERLAY")
-        lblTop:SetFont(TM:GetHeaderFont())
-        lblTop:SetPoint("TOPLEFT", 0, -95)
-        lblTop:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
-        lblTop:SetText("TOP KILLERS")
-        dashboardFrame.labels.topKillers = lblTop
+        -- ============================================================
+        -- ROW 1: Stat Cards (7 cards across the top)
+        -- ============================================================
+        local cardNames = { "kills", "kos", "bounties", "points", "rank", "kd", "streak" }
+        local cardTitles = { "GUILD KILLS", "KOS TARGETS", "BOUNTIES", "YOUR PTS", "RANK", "K/D RATIO", "BEST STREAK" }
+        local numCards = #cardNames
+        local cardGap = 6
+        local totalGaps = (numCards - 1) * cardGap
+        local cw = math.floor((fw - totalGaps) / numCards)
+        local ch = 62
 
-        for i = 1, 5 do
-            dashboardFrame.bars["topKiller" .. i] = self:CreateStatBar(dashboardFrame, 115 + (i - 1) * 24, 380)
+        for idx, key in ipairs(cardNames) do
+            local cx = (idx - 1) * (cw + cardGap)
+            dashboardFrame.cards[key] = self:CreateStatCard(dashboardFrame, cx, 0, cw, ch)
+            dashboardFrame.cards[key].title:SetText(cardTitles[idx])
+            dashboardFrame.cards[key].title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
         end
 
-        -- Section: Public Enemies (right column bars)
-        local lblEn = dashboardFrame:CreateFontString(nil, "OVERLAY")
-        lblEn:SetFont(TM:GetHeaderFont())
-        lblEn:SetPoint("TOPLEFT", 420, -95)
-        lblEn:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
-        lblEn:SetText("MOST WANTED ENEMIES")
-        dashboardFrame.labels.publicEnemies = lblEn
+        -- ============================================================
+        -- ROW 2: Two panels side by side
+        -- ============================================================
+        local row2Y = ch + 8
+        local panelH = 135
 
+        -- Left: Top Killers
+        local pKillers = self:CreateDashPanel(dashboardFrame, 0, row2Y, halfW, panelH, "TOP KILLERS")
+        pKillers._title = "TOP KILLERS"
+        dashboardFrame.panels.topKillers = pKillers
         for i = 1, 5 do
-            local bar = self:CreateStatBar(dashboardFrame, 115 + (i - 1) * 24, 380)
+            local bar = self:CreateStatBar(pKillers, 22 + (i - 1) * 22, halfW - 12)
             bar:ClearAllPoints()
-            bar:SetPoint("TOPLEFT", dashboardFrame, "TOPLEFT", 420, -(115 + (i - 1) * 24))
+            bar:SetPoint("TOPLEFT", pKillers, "TOPLEFT", 6, -(22 + (i - 1) * 22))
+            bar:SetSize(halfW - 12, 18)
+            dashboardFrame.bars["topKiller" .. i] = bar
+        end
+
+        -- Right: Most Wanted Enemies
+        local pEnemies = self:CreateDashPanel(dashboardFrame, halfW + 10, row2Y, halfW, panelH, "MOST WANTED")
+        pEnemies._title = "MOST WANTED"
+        dashboardFrame.panels.enemies = pEnemies
+        for i = 1, 5 do
+            local bar = self:CreateStatBar(pEnemies, 22 + (i - 1) * 22, halfW - 12)
+            bar:ClearAllPoints()
+            bar:SetPoint("TOPLEFT", pEnemies, "TOPLEFT", 6, -(22 + (i - 1) * 22))
+            bar:SetSize(halfW - 12, 18)
             dashboardFrame.bars["enemy" .. i] = bar
         end
 
-        -- Section: Recent Activity
-        local lblRecent = dashboardFrame:CreateFontString(nil, "OVERLAY")
-        lblRecent:SetFont(TM:GetHeaderFont())
-        lblRecent:SetPoint("TOPLEFT", 0, -250)
-        lblRecent:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
-        lblRecent:SetText("RECENT KILLS")
-        dashboardFrame.labels.recent = lblRecent
+        -- ============================================================
+        -- ROW 3: Recent Activity + Your Session
+        -- ============================================================
+        local row3Y = row2Y + panelH + 8
+        local row3H = 200
 
+        -- Left: Recent Kills
+        local pRecent = self:CreateDashPanel(dashboardFrame, 0, row3Y, halfW, row3H, "RECENT KILLS")
+        pRecent._title = "RECENT KILLS"
+        dashboardFrame.panels.recent = pRecent
         dashboardFrame.recentLines = {}
-        for i = 1, 8 do
-            local line = dashboardFrame:CreateFontString(nil, "OVERLAY")
-            line:SetFont(TM:GetBodyFont())
-            line:SetPoint("TOPLEFT", 10, -(270 + (i - 1) * 18))
-            line:SetWidth(780)
+        for i = 1, 10 do
+            local line = pRecent:CreateFontString(nil, "OVERLAY")
+            line:SetFont(TM:GetFont(10, ""))
+            line:SetPoint("TOPLEFT", pRecent, "TOPLEFT", 8, -(24 + (i - 1) * 17))
+            line:SetWidth(halfW - 20)
             line:SetJustifyH("LEFT")
+            line:SetWordWrap(false)
             dashboardFrame.recentLines[i] = line
         end
 
-        -- Section: Your Stats quick view
-        local lblYou = dashboardFrame:CreateFontString(nil, "OVERLAY")
-        lblYou:SetFont(TM:GetHeaderFont())
-        lblYou:SetPoint("TOPLEFT", 0, -(250 + 8 * 18 + 15))
-        lblYou:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
-        lblYou:SetText("YOUR SESSION")
-        dashboardFrame.labels.session = lblYou
+        -- Right: Your Session
+        local pSession = self:CreateDashPanel(dashboardFrame, halfW + 10, row3Y, halfW, row3H, "YOUR SESSION")
+        pSession._title = "YOUR SESSION"
+        dashboardFrame.panels.session = pSession
 
-        dashboardFrame.sessionLines = {}
-        for i = 1, 3 do
-            local line = dashboardFrame:CreateFontString(nil, "OVERLAY")
-            line:SetFont(TM:GetBodyFont())
-            line:SetPoint("TOPLEFT", 10, -(250 + 8 * 18 + 35 + (i - 1) * 18))
-            line:SetWidth(780)
-            line:SetJustifyH("LEFT")
-            dashboardFrame.sessionLines[i] = line
+        -- Session stat rows (label + value pairs)
+        dashboardFrame.sessionRows = {}
+        local sessionLabels = {
+            "Total Kills", "KOS Kills", "Bounty Kills", "Total Points",
+            "Best Streak", "Deaths", "Nemesis", "Favorite Victim",
+            "Active Bounties", "KOS List Size"
+        }
+        for i, label in ipairs(sessionLabels) do
+            local lbl = pSession:CreateFontString(nil, "OVERLAY")
+            lbl:SetFont(TM:GetFont(10, ""))
+            lbl:SetPoint("TOPLEFT", pSession, "TOPLEFT", 10, -(22 + (i - 1) * 17))
+            lbl:SetText(label)
+            lbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+
+            local val = pSession:CreateFontString(nil, "OVERLAY")
+            val:SetFont(TM:GetFont(10, ""))
+            val:SetPoint("TOPRIGHT", pSession, "TOPRIGHT", -14, -(22 + (i - 1) * 17))
+            val:SetJustifyH("RIGHT")
+            dashboardFrame.sessionRows[i] = val
         end
     end
 
-    -- UPDATE dynamic data
-    local accentHex = TM:AccentHex()
+    -- ================================================================
+    -- UPDATE DYNAMIC DATA
+    -- ================================================================
 
     -- Stat cards
     local totalGuildKills = 0
     for _, sc in pairs(Deadpool.demoData:GetMergedScoreboard()) do
         totalGuildKills = totalGuildKills + (sc.totalKills or 0)
     end
+
+    local deaths = #(Deadpool.demoData:GetMergedDeathLog())
+    local kd = deaths > 0 and string.format("%.1f", (score.totalKills or 0) / deaths) or
+        ((score.totalKills or 0) > 0 and "INF" or "0")
+
     dashboardFrame.cards.kills.value:SetText(accentHex .. totalGuildKills .. "|r")
-    dashboardFrame.cards.kills.title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
     dashboardFrame.cards.kills.subtitle:SetText("guild total")
 
     dashboardFrame.cards.kos.value:SetText(accentHex .. Deadpool:GetKOSCount() .. "|r")
-    dashboardFrame.cards.kos.title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
     dashboardFrame.cards.kos.subtitle:SetText("targets")
 
-    local activeBounties = #Deadpool:GetActiveBounties()
-    dashboardFrame.cards.bounties.value:SetText(Deadpool.colors.gold .. activeBounties .. "|r")
-    dashboardFrame.cards.bounties.title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
+    dashboardFrame.cards.bounties.value:SetText(Deadpool.colors.gold .. #Deadpool:GetActiveBounties() .. "|r")
     dashboardFrame.cards.bounties.subtitle:SetText("active")
 
     dashboardFrame.cards.points.value:SetText(Deadpool.colors.yellow .. (score.totalPoints or 0) .. "|r")
-    dashboardFrame.cards.points.title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
     dashboardFrame.cards.points.subtitle:SetText("points")
 
     local rank = Deadpool:GetPlayerRank(myName)
+    local totalRanked = Deadpool:TableCount(Deadpool.demoData:GetMergedScoreboard())
     dashboardFrame.cards.rank.value:SetText(Deadpool.colors.gold .. "#" .. rank .. "|r")
-    dashboardFrame.cards.rank.title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
-    dashboardFrame.cards.rank.subtitle:SetText("of " .. Deadpool:TableCount(Deadpool.demoData:GetMergedScoreboard()))
+    dashboardFrame.cards.rank.subtitle:SetText("of " .. totalRanked)
 
-    dashboardFrame.cards.enemies.value:SetText(Deadpool.colors.red .. Deadpool:TableCount(Deadpool.demoData:GetMergedEnemySheet()) .. "|r")
-    dashboardFrame.cards.enemies.title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
-    dashboardFrame.cards.enemies.subtitle:SetText("tracked")
+    dashboardFrame.cards.kd.value:SetText(accentHex .. kd .. "|r")
+    dashboardFrame.cards.kd.subtitle:SetText("ratio")
+
+    dashboardFrame.cards.streak.value:SetText(Deadpool.colors.orange .. (score.bestStreak or 0) .. "|r")
+    dashboardFrame.cards.streak.subtitle:SetText("kills")
+
+    -- Color all card titles with accent
+    for _, card in pairs(dashboardFrame.cards) do
+        card.title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
+    end
 
     -- Top Killers bars
     local topPlayers = Deadpool:GetScoreboardSorted("totalKills")
     local maxKills = (topPlayers[1] and topPlayers[1].totalKills or 1)
     if maxKills == 0 then maxKills = 1 end
+    local medals = { Deadpool.colors.gold, "|cFFC0C0C0", "|cFFCD7F32" }
     for i = 1, 5 do
         local bar = dashboardFrame.bars["topKiller" .. i]
         if topPlayers[i] then
             local p = topPlayers[i]
             local name = Deadpool:ShortName(p._key)
+            local prefix = medals[i] or Deadpool.colors.grey
             if p._key == myName then name = Deadpool.colors.cyan .. name .. "|r" end
-            bar:SetProgress(p.totalKills, maxKills, "#" .. i .. "  " .. name, tostring(p.totalKills) .. " kills")
+            bar:SetProgress(p.totalKills, maxKills,
+                prefix .. "#" .. i .. "|r  " .. name,
+                accentHex .. (p.totalKills or 0) .. "|r")
             bar:Show()
         else
             bar:Hide()
         end
     end
 
-    -- Public Enemies bars
+    -- Most Wanted Enemies bars
     local topEnemies = Deadpool:GetPublicEnemiesSorted("timesKilledUs")
-    local maxEnemyKills = (topEnemies[1] and topEnemies[1].timesKilledUs or 1)
-    if maxEnemyKills == 0 then maxEnemyKills = 1 end
+    local maxEK = (topEnemies[1] and topEnemies[1].timesKilledUs or 1)
+    if maxEK == 0 then maxEK = 1 end
     for i = 1, 5 do
         local bar = dashboardFrame.bars["enemy" .. i]
         if topEnemies[i] then
             local e = topEnemies[i]
             local name = e.class and Deadpool:ClassColor(e.class, Deadpool:ShortName(e._key)) or Deadpool:ShortName(e._key)
-            local kosTag = Deadpool:IsKOS(e._key) and (Deadpool.colors.red .. " [KOS]|r") or ""
-            bar:SetProgress(e.timesKilledUs, maxEnemyKills, "#" .. i .. "  " .. name .. kosTag, (e.timesKilledUs or 0) .. " kills on us")
-            bar.fill:SetVertexColor(0.8, 0.15, 0.10, 1)  -- red for enemies
+            local tags = ""
+            if Deadpool:IsKOS(e._key) then tags = Deadpool.colors.red .. " [KOS]|r" end
+            if Deadpool:HasActiveBounty(e._key) then tags = tags .. Deadpool.colors.gold .. " [$]|r" end
+            bar:SetProgress(e.timesKilledUs, maxEK,
+                Deadpool.colors.red .. "#" .. i .. "|r  " .. name .. tags,
+                Deadpool.colors.red .. (e.timesKilledUs or 0) .. " kills|r")
+            bar.fill:SetVertexColor(0.7, 0.1, 0.05, 0.9)
             bar:Show()
         else
             bar:Hide()
@@ -2418,18 +2509,18 @@ function UI:RenderDashboard()
 
     -- Recent kills feed
     local recentKills = Deadpool:GetKillLog("all")
-    for i = 1, 8 do
+    for i = 1, 10 do
         local line = dashboardFrame.recentLines[i]
         if recentKills[i] then
             local k = recentKills[i]
             local killer = Deadpool:ShortName(k.killer)
             local victim = k.victimClass and Deadpool:ClassColor(k.victimClass, Deadpool:ShortName(k.victim)) or Deadpool:ShortName(k.victim)
-            local lvlStr = k.victimLevel and k.victimLevel > 0 and (Deadpool.colors.grey .. " [" .. k.victimLevel .. "]|r") or ""
-            local typeTag = ""
-            if k.isBounty then typeTag = Deadpool.colors.gold .. " [BOUNTY]|r"
-            elseif k.isKOS then typeTag = Deadpool.colors.red .. " [KOS]|r" end
+            local lvl = k.victimLevel and k.victimLevel > 0 and (Deadpool.colors.grey .. "[" .. k.victimLevel .. "]|r") or ""
+            local tag = ""
+            if k.isBounty then tag = Deadpool.colors.gold .. " [$]|r"
+            elseif k.isKOS then tag = Deadpool.colors.red .. " [KOS]|r" end
             local timeStr = Deadpool.colors.grey .. Deadpool:TimeAgo(k.time) .. "|r"
-            line:SetText(timeStr .. "  " .. Deadpool.colors.green .. killer .. "|r killed " .. victim .. lvlStr .. typeTag .. " in " .. Deadpool.colors.yellow .. (k.zone or "?") .. "|r")
+            line:SetText(timeStr .. " " .. Deadpool.colors.green .. killer .. "|r > " .. victim .. " " .. lvl .. tag)
             line:Show()
         else
             line:SetText("")
@@ -2440,25 +2531,30 @@ function UI:RenderDashboard()
     local nemesis, nemesisCount = nil, 0
     local myDeaths = {}
     for _, d in ipairs(Deadpool.demoData:GetMergedDeathLog()) do
-        if d.victim == myName then
-            myDeaths[d.killer] = (myDeaths[d.killer] or 0) + 1
-        end
+        if d.victim == myName then myDeaths[d.killer] = (myDeaths[d.killer] or 0) + 1 end
     end
-    for k, v in pairs(myDeaths) do
-        if v > nemesisCount then nemesis = k; nemesisCount = v end
+    for k, v in pairs(myDeaths) do if v > nemesisCount then nemesis = k; nemesisCount = v end end
+
+    local favTarget, favCount = nil, 0
+    local myKills = {}
+    for _, k in ipairs(Deadpool.demoData:GetMergedKillLog()) do
+        if k.killer == myName then myKills[k.victim] = (myKills[k.victim] or 0) + 1 end
     end
+    for k, v in pairs(myKills) do if v > favCount then favTarget = k; favCount = v end end
 
-    dashboardFrame.sessionLines[1]:SetText(
-        "Kills: " .. accentHex .. (score.totalKills or 0) .. "|r" ..
-        "     Streak: " .. Deadpool.colors.orange .. (score.bestStreak or 0) .. "|r" ..
-        "     Deaths: " .. Deadpool.colors.red .. #(Deadpool.demoData:GetMergedDeathLog()) .. "|r")
-    dashboardFrame.sessionLines[2]:SetText(
-        "Nemesis: " .. (nemesis and (Deadpool.colors.red .. Deadpool:ShortName(nemesis) .. " (" .. nemesisCount .. "x)|r") or Deadpool.colors.grey .. "none|r"))
-    dashboardFrame.sessionLines[3]:SetText(
-        "Theme: " .. TM:AccentHex() .. TM:GetThemeName() .. "|r" ..
-        (TM.isElvUI and ("  |  " .. Deadpool.colors.cyan .. "ElvUI integrated|r") or ""))
+    local sRows = dashboardFrame.sessionRows
+    sRows[1]:SetText(accentHex .. (score.totalKills or 0) .. "|r")
+    sRows[2]:SetText(Deadpool.colors.red .. (score.kosKills or 0) .. "|r")
+    sRows[3]:SetText(Deadpool.colors.gold .. (score.bountyKills or 0) .. "|r")
+    sRows[4]:SetText(Deadpool.colors.yellow .. (score.totalPoints or 0) .. "|r")
+    sRows[5]:SetText(Deadpool.colors.orange .. (score.bestStreak or 0) .. "|r")
+    sRows[6]:SetText(Deadpool.colors.red .. deaths .. "|r")
+    sRows[7]:SetText(nemesis and (Deadpool.colors.red .. Deadpool:ShortName(nemesis) .. " (" .. nemesisCount .. "x)|r") or Deadpool.colors.grey .. "none|r")
+    sRows[8]:SetText(favTarget and (Deadpool.colors.green .. Deadpool:ShortName(favTarget) .. " (" .. favCount .. "x)|r") or Deadpool.colors.grey .. "none|r")
+    sRows[9]:SetText(Deadpool.colors.gold .. #Deadpool:GetActiveBounties() .. "|r")
+    sRows[10]:SetText(accentHex .. Deadpool:GetKOSCount() .. "|r")
 
-    statusText:SetText("Dashboard | " .. TM:GetThemeName() .. " theme" .. (TM.isElvUI and " | ElvUI" or ""))
+    statusText:SetText("Dashboard | " .. TM:GetThemeName() .. (TM.isElvUI and " | ElvUI" or ""))
 end
 
 ----------------------------------------------------------------------
