@@ -8,9 +8,11 @@
 
 Core.lua
 Data.lua
+DemoData.lua
 BountyManager.lua
 KillTracker.lua
 Sync.lua
 Theme.lua
+Nearby.lua
 UI.lua
 Alerts.lua

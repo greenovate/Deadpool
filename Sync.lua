@@ -23,6 +23,7 @@ local MSG = {
     HEARTBEAT   = "HB",        -- periodic version heartbeat
     PUSH        = "PUSH",      -- "I have data for you" (version-aware)
     SIGHTING    = "SIGHT",     -- KOS target spotted by a guild member
+    GM_CONFIG   = "GMCFG",    -- GM config push (point values, timestamps)
 }
 
 local SEPARATOR = "|"
@@ -156,6 +157,8 @@ function Sync:OnAddonMessage(message, channel, sender)
         Sync:Send(MSG.SYNC_REQ, tostring(Deadpool.db.syncVersion or 0), sender)
     elseif msgType == MSG.SIGHTING then
         self:HandleSighting(data, sender)
+    elseif msgType == MSG.GM_CONFIG then
+        self:HandleGMConfig(data, sender)
     end
 end
 
@@ -202,8 +205,9 @@ end
 function Deadpool:BroadcastBountyAdd(fullName)
     local bounty = Deadpool.db.bounties[fullName]
     if not bounty then return end
-    local data = encode(fullName, bounty.bountyGold, bounty.maxKills,
-        bounty.placedBy or "", bounty.placedDate or 0)
+    local data = encode(fullName, bounty.bountyGold or 0, bounty.maxKills,
+        bounty.placedBy or "", bounty.placedDate or 0,
+        bounty.bountyType or "gold", bounty.bountyPoints or 0)
     Sync:Send(MSG.BOUNTY_ADD, data)
 end
 
@@ -301,8 +305,10 @@ function Sync:HandleBountyAdd(data, sender)
     local maxKills = tonumber(parts[3]) or 10
     local placedBy = parts[4] ~= "" and parts[4] or sender
     local placedDate = tonumber(parts[5]) or time()
+    local bountyType = (parts[6] and parts[6] ~= "") and parts[6] or "gold"
+    local bountyPoints = tonumber(parts[7]) or 0
 
-    if not fullName or gold <= 0 then return end
+    if not fullName or (gold <= 0 and bountyPoints <= 0) then return end
 
     -- Auto-add to KOS if not there
     if not Deadpool:IsKOS(fullName) then
@@ -313,6 +319,8 @@ function Sync:HandleBountyAdd(data, sender)
         Deadpool.db.bounties[fullName] = {
             target = fullName,
             bountyGold = gold,
+            bountyPoints = bountyPoints,
+            bountyType = bountyType,
             placedBy = placedBy,
             placedDate = placedDate,
             maxKills = maxKills,
@@ -320,8 +328,9 @@ function Sync:HandleBountyAdd(data, sender)
             expired = false,
             claims = {},
         }
+        local reward = bountyType == "points" and (bountyPoints .. " pts") or Deadpool:FormatGold(gold)
         Deadpool:Print(Deadpool.colors.gold .. "NEW CONTRACT|r — " ..
-            Deadpool:ShortName(fullName) .. " — " .. Deadpool:FormatGold(gold) ..
+            Deadpool:ShortName(fullName) .. " — " .. reward ..
             " placed by " .. Deadpool:ShortName(placedBy))
     end
     if Deadpool.RefreshUI then Deadpool:RefreshUI() end
@@ -363,7 +372,8 @@ function Sync:HandleSyncRequest(sender)
         C_Timer.After(delay, function()
             local data = encode(fullName, bounty.bountyGold or 0, bounty.maxKills or 10,
                 bounty.currentKills or 0, bounty.placedBy or "", bounty.placedDate or 0,
-                bounty.expired and "1" or "0")
+                bounty.expired and "1" or "0",
+                bounty.bountyType or "gold", bounty.bountyPoints or 0)
             Sync:Send(MSG.SYNC_BNT, data, sender)
         end)
         delay = delay + BATCH_DELAY
@@ -378,6 +388,18 @@ function Sync:HandleSyncRequest(sender)
         end)
         delay = delay + BATCH_DELAY
     end
+
+    -- Send guild config
+    C_Timer.After(delay, function()
+        local gc = Deadpool.db.guildConfig
+        local data = table.concat({
+            gc.pointsPerKill or 5, gc.pointsPerKOSKill or 25, gc.pointsPerBountyKill or 100,
+            gc.pointsUnderdogMultiplier3 or 2.0, gc.pointsUnderdogMultiplier6 or 3.0,
+            gc.pointsLowbieFloor or 1, gc.updatedBy or "", gc.updatedAt or 0,
+        }, "|")
+        Sync:Send(MSG.GM_CONFIG, data, sender)
+    end)
+    delay = delay + BATCH_DELAY
 
     -- Send end marker
     C_Timer.After(delay + BATCH_DELAY, function()
@@ -440,12 +462,16 @@ function Sync:HandleSyncBounty(data, sender)
     local placedBy = parts[5] ~= "" and parts[5] or nil
     local placedDate = tonumber(parts[6]) or 0
     local expired = parts[7] == "1"
+    local bountyType = (parts[8] and parts[8] ~= "") and parts[8] or "gold"
+    local bountyPoints = tonumber(parts[9]) or 0
 
     local existing = Deadpool.db.bounties[fullName]
     if not existing then
         Deadpool.db.bounties[fullName] = {
             target = fullName,
             bountyGold = gold,
+            bountyPoints = bountyPoints,
+            bountyType = bountyType,
             placedBy = placedBy,
             placedDate = placedDate,
             maxKills = maxKills,
@@ -454,12 +480,16 @@ function Sync:HandleSyncBounty(data, sender)
             claims = {},
         }
     else
-        -- Merge: take higher kill/gold counts
+        -- Merge: take higher kill/gold/points counts
         if currentKills > (existing.currentKills or 0) then
             existing.currentKills = currentKills
         end
         if gold > (existing.bountyGold or 0) then
             existing.bountyGold = gold
+        end
+        if bountyPoints > (existing.bountyPoints or 0) then
+            existing.bountyPoints = bountyPoints
+            existing.bountyType = bountyType
         end
         if expired and not existing.expired then
             existing.expired = true
@@ -551,10 +581,97 @@ function Sync:HandleSighting(data, sender)
 end
 
 function Sync:HandleVersion(data, sender)
-    -- Could check for version mismatches and warn
     if data and data ~= Deadpool.version then
         Deadpool:Debug(sender .. " is running Deadpool v" .. data .. " (we have v" .. Deadpool.version .. ")")
     end
+end
+
+----------------------------------------------------------------------
+-- GM Config sync: point values managed by GM, timestamp-based resolution
+----------------------------------------------------------------------
+function Deadpool:BroadcastGMConfig()
+    if not self:IsManager() then
+        self:Print(Deadpool.colors.red .. "Only managers can push config changes.|r")
+        return
+    end
+    local gc = self.db.guildConfig
+    gc.updatedBy = self:GetPlayerFullName()
+    gc.updatedAt = time()
+    -- Serialize managers list
+    local mgrList = ""
+    if gc.managers then
+        local names = {}
+        for n in pairs(gc.managers) do names[#names + 1] = n end
+        mgrList = table.concat(names, ",")
+    end
+    -- Serialize war guilds list
+    local warList = ""
+    if gc.warGuilds then
+        local guilds = {}
+        for g in pairs(gc.warGuilds) do guilds[#guilds + 1] = g end
+        warList = table.concat(guilds, ",")
+    end
+    local data = table.concat({
+        gc.pointsPerKill or 5,
+        gc.pointsPerKOSKill or 25,
+        gc.pointsPerBountyKill or 100,
+        gc.pointsUnderdogMultiplier3 or 2.0,
+        gc.pointsUnderdogMultiplier6 or 3.0,
+        gc.pointsLowbieFloor or 1,
+        gc.updatedBy or "",
+        gc.updatedAt or 0,
+        mgrList,
+        warList,
+    }, "|")
+    Sync:Send(MSG.GM_CONFIG, data)
+    self:Print(Deadpool.colors.gold .. "Guild config pushed to all members.|r")
+end
+
+function Sync:HandleGMConfig(data, sender)
+    local parts = {}
+    for part in (data .. "|"):gmatch("(.-)|") do
+        table.insert(parts, part)
+    end
+
+    local remoteTimestamp = tonumber(parts[8]) or 0
+    local localTimestamp = Deadpool.db.guildConfig.updatedAt or 0
+
+    -- Only accept if remote is newer
+    if remoteTimestamp <= localTimestamp then
+        Deadpool:Debug("GM config from " .. sender .. " is older than ours, ignoring")
+        return
+    end
+
+    Deadpool.db.guildConfig.pointsPerKill = tonumber(parts[1]) or 5
+    Deadpool.db.guildConfig.pointsPerKOSKill = tonumber(parts[2]) or 25
+    Deadpool.db.guildConfig.pointsPerBountyKill = tonumber(parts[3]) or 100
+    Deadpool.db.guildConfig.pointsUnderdogMultiplier3 = tonumber(parts[4]) or 2.0
+    Deadpool.db.guildConfig.pointsUnderdogMultiplier6 = tonumber(parts[5]) or 3.0
+    Deadpool.db.guildConfig.pointsLowbieFloor = tonumber(parts[6]) or 1
+    Deadpool.db.guildConfig.updatedBy = parts[7] or sender
+    Deadpool.db.guildConfig.updatedAt = remoteTimestamp
+
+    -- Deserialize managers list
+    local mgrStr = parts[9] or ""
+    Deadpool.db.guildConfig.managers = {}
+    if mgrStr ~= "" then
+        for name in mgrStr:gmatch("([^,]+)") do
+            Deadpool.db.guildConfig.managers[name] = true
+        end
+    end
+
+    -- Deserialize war guilds list
+    local warStr = parts[10] or ""
+    Deadpool.db.guildConfig.warGuilds = {}
+    if warStr ~= "" then
+        for guild in warStr:gmatch("([^,]+)") do
+            Deadpool.db.guildConfig.warGuilds[guild] = true
+        end
+    end
+
+    local senderShort = sender:match("^(.-)%-") or sender
+    Deadpool:Print(Deadpool.colors.gold .. "Guild config updated by " .. senderShort .. "|r")
+    if Deadpool.RefreshUI then Deadpool:RefreshUI() end
 end
 
 ----------------------------------------------------------------------
@@ -631,7 +748,8 @@ function Sync:PushFullStateToGuild()
     for fullName, bounty in pairs(Deadpool.db.bounties) do
         local data = encode(fullName, bounty.bountyGold or 0, bounty.maxKills or 10,
             bounty.currentKills or 0, bounty.placedBy or "", bounty.placedDate or 0,
-            bounty.expired and "1" or "0")
+            bounty.expired and "1" or "0",
+            bounty.bountyType or "gold", bounty.bountyPoints or 0)
         Sync:Send(MSG.SYNC_BNT, data)
     end
     -- Send scoreboard

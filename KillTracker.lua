@@ -40,10 +40,34 @@ end
 -- Track who last attacked us for auto-KOS
 local lastAttackers = {}  -- [attackerName] = timestamp
 
+-- Track the last hostile player who damaged us (for death attribution)
+local lastHostileAttacker = {
+    name = nil,
+    guid = nil,
+    class = nil,
+    race = nil,
+    flags = nil,
+    time = 0,
+}
+
+----------------------------------------------------------------------
+-- Check if we're in a BG or Arena (skip tracking in instances)
+----------------------------------------------------------------------
+function KillTracker:IsInBGOrArena()
+    local inInstance, instanceType = IsInInstance()
+    if inInstance and (instanceType == "pvp" or instanceType == "arena") then
+        return true
+    end
+    return false
+end
+
 ----------------------------------------------------------------------
 -- Combat Log: Killing Blow Detection
 ----------------------------------------------------------------------
 function KillTracker:OnCombatLogEvent()
+    -- Skip ALL tracking in battlegrounds and arenas
+    if self:IsInBGOrArena() then return end
+
     local timestamp, subevent, hideCaster,
           sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
           destGUID, destName, destFlags, destRaidFlags = CombatLogGetCurrentEventInfo()
@@ -57,30 +81,70 @@ function KillTracker:OnCombatLogEvent()
         self:CheckAutoKOS(subevent, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags)
     end
 
-    -- Track deaths: enemy player killed us or a guild member
-    if subevent == "PARTY_KILL" then
-        -- Check if WE (or guild) are the victim
-        if destGUID and destGUID:sub(1, 6) == "Player" and sourceGUID and sourceGUID:sub(1, 6) == "Player" then
-            local destIsUs = (destName == UnitName("player"))
-            local destIsOurs = false
-            if destFlags then
-                if bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0 then destIsOurs = true end
-                if bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0 then destIsOurs = true end
-                if bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0 then destIsOurs = true end
-            end
-
-            if destIsUs or destIsOurs then
-                -- Enemy killed us/guildmate — check if source is hostile
-                if sourceFlags and bit.band(sourceFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
-                    local killerClass, killerRace = self:GetInfoFromGUID(sourceGUID)
-                    local killerFullName = Deadpool:NormalizeName(sourceName)
-                    local victimFullName = Deadpool:NormalizeName(destName)
-                    if killerFullName and victimFullName then
-                        self:RecordDeath(killerFullName, victimFullName, killerClass, killerRace)
+    -- Track last hostile player who damaged us (for death attribution)
+    if subevent and (subevent:find("_DAMAGE") or subevent == "SWING_DAMAGE") then
+        if destName == UnitName("player") and sourceGUID and sourceGUID:sub(1, 6) == "Player" then
+            if sourceFlags and bit.band(sourceFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
+                local aClass, aRace = self:GetInfoFromGUID(sourceGUID)
+                lastHostileAttacker.name = sourceName
+                lastHostileAttacker.guid = sourceGUID
+                lastHostileAttacker.class = aClass
+                lastHostileAttacker.race = aRace
+                lastHostileAttacker.flags = sourceFlags
+                lastHostileAttacker.time = time()
+                -- Try to get level from target or nameplates
+                lastHostileAttacker.level = nil
+                if UnitExists("target") and UnitName("target") == sourceName then
+                    lastHostileAttacker.level = UnitLevel("target")
+                else
+                    for i = 1, 40 do
+                        local unit = "nameplate" .. i
+                        if UnitExists(unit) and UnitName(unit) == sourceName then
+                            lastHostileAttacker.level = UnitLevel(unit)
+                            break
+                        end
                     end
                 end
             end
+        end
+    end
 
+    -- Detect OUR death via UNIT_DIED — attribute to last hostile attacker
+    if subevent == "UNIT_DIED" then
+        if destGUID == UnitGUID("player") then
+            -- We died. If a hostile player hit us in the last 15 seconds, they killed us.
+            if lastHostileAttacker.name and (time() - lastHostileAttacker.time) < 15 then
+                local killerFullName = Deadpool:NormalizeName(lastHostileAttacker.name)
+                local victimFullName = Deadpool:GetPlayerFullName()
+                if killerFullName and victimFullName then
+                    self:RecordDeath(killerFullName, victimFullName,
+                        lastHostileAttacker.class, lastHostileAttacker.race,
+                        lastHostileAttacker.level)
+                end
+            end
+            -- Reset attacker
+            lastHostileAttacker.name = nil
+            lastHostileAttacker.time = 0
+        end
+    end
+
+    -- Track deaths of party/raid members via UNIT_DIED
+    if subevent == "UNIT_DIED" then
+        if destGUID and destGUID:sub(1, 6) == "Player" and destGUID ~= UnitGUID("player") then
+            if destFlags then
+                local isOurs = bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0
+                    or bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0
+                if isOurs then
+                    -- Check if last hostile attacker was targeting them too
+                    -- (limited accuracy — best effort for group members)
+                end
+            end
+        end
+    end
+
+    -- Track kills: PARTY_KILL for when we/guild get killing blows
+    if subevent == "PARTY_KILL" then
+        if destGUID and destGUID:sub(1, 6) == "Player" and sourceGUID and sourceGUID:sub(1, 6) == "Player" then
             -- Original kill tracking: check if source is us/guild
             self:ProcessKillingBlow(sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags)
         end
@@ -158,7 +222,7 @@ end
 ----------------------------------------------------------------------
 -- Death recording: enemy players killing us/guildmates
 ----------------------------------------------------------------------
-function KillTracker:RecordDeath(killerFullName, victimFullName, killerClass, killerRace)
+function KillTracker:RecordDeath(killerFullName, victimFullName, killerClass, killerRace, killerLevel)
     local zone = Deadpool:GetZone()
 
     -- Log the death
@@ -178,17 +242,23 @@ function KillTracker:RecordDeath(killerFullName, victimFullName, killerClass, ki
     enemy.lastKilledUsBy = victimFullName
     if killerClass then enemy.class = killerClass end
     if killerRace then enemy.race = killerRace end
+    if killerLevel and killerLevel > 0 then enemy.level = killerLevel end
 
     -- Announce
     local display = killerClass and Deadpool:ClassColor(killerClass, Deadpool:ShortName(killerFullName)) or Deadpool:ShortName(killerFullName)
+    local lvlStr = (killerLevel and killerLevel > 0) and (Deadpool.colors.grey .. " [" .. killerLevel .. "]|r") or ((enemy.level and enemy.level > 0) and (Deadpool.colors.grey .. " [" .. enemy.level .. "]|r") or "")
     local wasMe = (victimFullName == Deadpool:GetPlayerFullName())
     if wasMe then
-        Deadpool:Print(Deadpool.colors.red .. "KILLED BY|r " .. display ..
+        Deadpool:Print(Deadpool.colors.red .. "KILLED BY|r " .. display .. lvlStr ..
             " in " .. Deadpool.colors.yellow .. zone .. "|r" ..
             " (" .. enemy.timesKilledUs .. "x total)")
+        Deadpool:PlayDeathSound()
+    else
+        -- Party/raid member died
+        Deadpool:PlayPartyDeathSound()
     end
 
-    -- Auto-KOS if enabled
+    -- Auto-KOS: they KILLED us — that's KOS-worthy
     if Deadpool.db.settings.autoKOSOnAttack then
         if not Deadpool:IsKOS(killerFullName) then
             Deadpool:AddToKOS(killerFullName, "Auto-KOS: killed " .. Deadpool:ShortName(victimFullName))
@@ -281,9 +351,34 @@ function KillTracker:AlertKOSFromCombatLog(fullName, guid)
 end
 
 ----------------------------------------------------------------------
--- Auto-KOS: detect enemy players attacking us via damage events
+-- Auto-KOS: only if THEY attack YOU first (not if you ganked them)
+-- Tracks who we attacked so we don't KOS people defending themselves
 ----------------------------------------------------------------------
+local playersWeAttacked = {}  -- [name] = timestamp of when WE hit them first
+
+function KillTracker:TrackOurAggression(subevent, sourceGUID, sourceName, destGUID, destName, destFlags)
+    -- Track when WE damage a hostile player (we initiated)
+    if not subevent then return end
+    local isDamage = subevent:find("_DAMAGE") or subevent == "SWING_DAMAGE"
+    if not isDamage then return end
+
+    -- Source must be us
+    if sourceName ~= UnitName("player") then return end
+
+    -- Dest must be a hostile player
+    if not destGUID or destGUID:sub(1, 6) ~= "Player" then return end
+    if not destFlags or bit.band(destFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) == 0 then return end
+
+    -- Record that WE attacked this player (they're defending, not initiating)
+    if not playersWeAttacked[destName] then
+        playersWeAttacked[destName] = time()
+    end
+end
+
 function KillTracker:CheckAutoKOS(subevent, sourceGUID, sourceName, sourceFlags, destGUID, destName, destFlags)
+    -- Also track our own aggression
+    self:TrackOurAggression(subevent, sourceGUID, sourceName, destGUID, destName, destFlags)
+
     -- Only care about damage events hitting us
     if not subevent then return end
     local isDamage = subevent:find("_DAMAGE") or subevent == "SWING_DAMAGE"
@@ -301,12 +396,36 @@ function KillTracker:CheckAutoKOS(subevent, sourceGUID, sourceName, sourceFlags,
     if lastAttackers[sourceName] and (now - lastAttackers[sourceName]) < 60 then return end
     lastAttackers[sourceName] = now
 
+    -- KEY CHECK: did WE attack them first? If so, they're defending — don't KOS
+    if playersWeAttacked[sourceName] and (now - playersWeAttacked[sourceName]) < 120 then
+        -- We hit them within the last 2 minutes — they're fighting back, not initiating
+        return
+    end
+
+    -- They attacked us unprovoked — mark as aggressive (not KOS)
     local attackerFullName = Deadpool:NormalizeName(sourceName)
     if not attackerFullName then return end
 
-    if not Deadpool:IsKOS(attackerFullName) then
-        Deadpool:AddToKOS(attackerFullName, "Auto-KOS: attacked you")
-    end
+    -- Mark in enemy sheet as aggressive with 24hr timer
+    local enemy = Deadpool:GetOrCreateEnemy(attackerFullName)
+    enemy.isAggressive = true
+    enemy.aggressiveUntil = time() + 86400  -- 24 hours
+    local class, race = Deadpool.modules.KillTracker:GetInfoFromGUID(sourceGUID)
+    if class then enemy.class = class end
+    if race then enemy.race = race end
+
+    local display = class and Deadpool:ClassColor(class, Deadpool:ShortName(attackerFullName)) or Deadpool:ShortName(attackerFullName)
+    Deadpool:Print(Deadpool.colors.orange .. "HOSTILE|r " .. display .. " attacked you!")
+end
+
+-- Clean up old aggression tracking every 5 minutes
+if C_Timer and C_Timer.NewTicker then
+    C_Timer.NewTicker(300, function()
+        local now = time()
+        for name, t in pairs(playersWeAttacked) do
+            if (now - t) > 300 then playersWeAttacked[name] = nil end
+        end
+    end)
 end
 
 ----------------------------------------------------------------------

@@ -121,20 +121,32 @@ end
 ----------------------------------------------------------------------
 -- Bounty Contracts
 ----------------------------------------------------------------------
-function Deadpool:PlaceBounty(nameOrFullName, goldAmount, maxKills)
+function Deadpool:PlaceBounty(nameOrFullName, amount, maxKills, bountyType)
+    bountyType = bountyType or "gold"
     local fullName = self:NormalizeName(nameOrFullName)
     if not fullName then
         self:Print("Invalid player name.")
         return false
     end
 
-    if not goldAmount or goldAmount <= 0 then
+    if not amount or amount <= 0 then
         self:Print("Bounty amount must be greater than 0.")
         return false
     end
 
     maxKills = maxKills or 10
     if maxKills < 1 then maxKills = 1 end
+
+    -- If points bounty, deduct from placer's score
+    if bountyType == "points" then
+        local myName = self:GetPlayerFullName()
+        local score = self:GetOrCreateScore(myName)
+        if (score.totalPoints or 0) < amount then
+            self:Print(self.colors.red .. "Not enough points!|r You have " .. (score.totalPoints or 0) .. " pts.")
+            return false
+        end
+        score.totalPoints = score.totalPoints - amount
+    end
 
     -- Auto-add to KOS if not already
     if not self:IsKOS(fullName) then
@@ -144,16 +156,23 @@ function Deadpool:PlaceBounty(nameOrFullName, goldAmount, maxKills)
     -- Check for existing active bounty
     if self:HasActiveBounty(fullName) then
         local existing = self.db.bounties[fullName]
-        -- Stack bounties: add gold and extend kills
-        existing.bountyGold = existing.bountyGold + goldAmount
+        -- Stack bounties: add amount and extend kills
+        if bountyType == "gold" then
+            existing.bountyGold = (existing.bountyGold or 0) + amount
+        else
+            existing.bountyPoints = (existing.bountyPoints or 0) + amount
+        end
         existing.maxKills = existing.maxKills + maxKills
         existing.lastUpdated = time()
+        local reward = bountyType == "gold" and self:FormatGold(existing.bountyGold or 0) or ((existing.bountyPoints or 0) .. " pts")
         self:Print(self.colors.gold .. "Bounty STACKED|r on " .. self:ShortName(fullName) ..
-            " — now " .. self:FormatGold(existing.bountyGold) .. " for " .. existing.maxKills .. " kills.")
+            " — now " .. reward .. " for " .. existing.maxKills .. " kills.")
     else
         self.db.bounties[fullName] = {
             target = fullName,
-            bountyGold = goldAmount,
+            bountyGold = bountyType == "gold" and amount or 0,
+            bountyPoints = bountyType == "points" and amount or 0,
+            bountyType = bountyType,
             placedBy = self:GetPlayerFullName(),
             placedDate = time(),
             maxKills = maxKills,
@@ -162,9 +181,10 @@ function Deadpool:PlaceBounty(nameOrFullName, goldAmount, maxKills)
             expiredReason = nil,
             claims = {},
         }
+        local reward = bountyType == "gold" and self:FormatGold(amount) or (amount .. " pts")
         self:Print(self.colors.gold .. "CONTRACT PLACED|r — " ..
             self.colors.red .. self:ShortName(fullName) .. "|r — " ..
-            self:FormatGold(goldAmount) .. " for " .. maxKills .. " kills.")
+            reward .. " for " .. maxKills .. " kills.")
     end
 
     self:BumpSyncVersion()
@@ -172,6 +192,85 @@ function Deadpool:PlaceBounty(nameOrFullName, goldAmount, maxKills)
     -- Broadcast
     self:BroadcastBountyAdd(fullName)
 
+    if self.RefreshUI then self:RefreshUI() end
+    return true
+end
+
+----------------------------------------------------------------------
+-- Contribute to an existing bounty (add gold or points, no kill change)
+----------------------------------------------------------------------
+function Deadpool:ContributeToBounty(fullName, amount, bountyType)
+    bountyType = bountyType or "gold"
+    local bounty = self.db.bounties[fullName]
+    if not bounty or bounty.expired then
+        self:Print("No active bounty on " .. self:ShortName(fullName))
+        return false
+    end
+    if not amount or amount <= 0 then
+        self:Print("Amount must be greater than 0.")
+        return false
+    end
+
+    -- If points, deduct from contributor's score
+    if bountyType == "points" then
+        local myName = self:GetPlayerFullName()
+        local score = self:GetOrCreateScore(myName)
+        if (score.totalPoints or 0) < amount then
+            self:Print(self.colors.red .. "Not enough points!|r You have " .. (score.totalPoints or 0) .. " pts.")
+            return false
+        end
+        score.totalPoints = score.totalPoints - amount
+    end
+
+    if bountyType == "gold" then
+        bounty.bountyGold = (bounty.bountyGold or 0) + amount
+    else
+        bounty.bountyPoints = (bounty.bountyPoints or 0) + amount
+    end
+    bounty.lastUpdated = time()
+
+    local display = bountyType == "gold" and self:FormatGold(amount) or (amount .. " pts")
+    self:Print(self.colors.gold .. "Bounty contribution|r — " .. display ..
+        " added to " .. self:ShortName(fullName) .. "'s bounty.")
+
+    self:BumpSyncVersion()
+    self:BroadcastBountyAdd(fullName)
+    if self.RefreshUI then self:RefreshUI() end
+    return true
+end
+
+----------------------------------------------------------------------
+-- Edit bounty max kills (placer or manager only)
+----------------------------------------------------------------------
+function Deadpool:EditBountyKills(fullName, newMaxKills)
+    local bounty = self.db.bounties[fullName]
+    if not bounty or bounty.expired then
+        self:Print("No active bounty on " .. self:ShortName(fullName))
+        return false
+    end
+    newMaxKills = tonumber(newMaxKills)
+    if not newMaxKills or newMaxKills < 1 then
+        self:Print("Max kills must be at least 1.")
+        return false
+    end
+
+    local myName = self:GetPlayerFullName()
+    if bounty.placedBy ~= myName and not self:IsManager() then
+        self:Print(self.colors.red .. "Only the bounty placer or a manager can edit this.|r")
+        return false
+    end
+
+    if newMaxKills < (bounty.currentKills or 0) then
+        newMaxKills = bounty.currentKills
+    end
+
+    bounty.maxKills = newMaxKills
+    bounty.lastUpdated = time()
+    self:Print(self.colors.gold .. "Bounty updated|r — " .. self:ShortName(fullName) ..
+        " now requires " .. newMaxKills .. " kills.")
+
+    self:BumpSyncVersion()
+    self:BroadcastBountyAdd(fullName)
     if self.RefreshUI then self:RefreshUI() end
     return true
 end
@@ -186,6 +285,17 @@ function Deadpool:ClaimBountyKill(targetFullName, killerFullName, zone)
         time = time(),
         zone = zone or "Unknown",
     })
+
+    -- Award bounty points to killer if this is a points bounty
+    if (bounty.bountyType == "points" or (bounty.bountyPoints or 0) > 0) and (bounty.maxKills or 1) > 0 then
+        local ptsPerKill = math.floor((bounty.bountyPoints or 0) / bounty.maxKills)
+        if ptsPerKill > 0 then
+            local killerScore = self:GetOrCreateScore(killerFullName)
+            killerScore.totalPoints = (killerScore.totalPoints or 0) + ptsPerKill
+            self:Print(self.colors.cyan .. self:ShortName(killerFullName) .. "|r earned " ..
+                self.colors.yellow .. ptsPerKill .. " bounty pts|r")
+        end
+    end
 
     -- Check if bounty is now complete
     if bounty.currentKills >= bounty.maxKills then
@@ -208,42 +318,49 @@ end
 ----------------------------------------------------------------------
 function Deadpool:AwardKillPoints(killerFullName, victimFullName, killType, victimLevel)
     local score = self:GetOrCreateScore(killerFullName)
+    local gc = self:GetPointsConfig()
     local points = 0
 
     if killType == "bounty" then
-        points = self.db.settings.pointsPerBountyKill
+        points = gc.pointsPerBountyKill or 100
         score.bountyKills = score.bountyKills + 1
     elseif killType == "kos" then
-        points = self.db.settings.pointsPerKOSKill
+        points = gc.pointsPerKOSKill or 25
         score.kosKills = score.kosKills + 1
     else
-        points = self.db.settings.pointsPerKill
+        points = gc.pointsPerKill or 5
         score.randomKills = (score.randomKills or 0) + 1
     end
 
-    -- Level-based modifier: killing lowbies is worth less
-    if victimLevel and victimLevel > 0 and victimLevel < 60 then
-        if victimLevel < 20 then
-            points = 1  -- lowbie kill = 1 pt regardless
-        elseif victimLevel < 40 then
-            points = math.max(1, math.floor(points * 0.25))
-        elseif victimLevel < 55 then
-            points = math.max(1, math.floor(points * 0.5))
+    -- Level-based modifier: relative to YOUR level
+    local myLevel = UnitLevel("player") or 0
+    local lowbieRange = gc.pointsLowbieRange or 5
+    local lowbieReduction = gc.pointsLowbieReduction or 0.5
+    local lowbieFloor = gc.pointsLowbieFloor or 1
+    local lowbieTier2 = gc.pointsLowbieTier2 or 10
+
+    if victimLevel and victimLevel > 0 and myLevel > 0 then
+        local levelDiff = myLevel - victimLevel  -- positive = victim is lower
+        if levelDiff > lowbieTier2 then
+            -- Far below: floor points
+            points = lowbieFloor
+        elseif levelDiff > lowbieRange then
+            -- Somewhat below: reduced points
+            points = math.max(lowbieFloor, math.floor(points * lowbieReduction))
         end
+        -- Within range or higher: full points (no reduction)
     end
 
-    -- Underdog bonus: killing someone higher level than you = bonus points
-    local myLevel = UnitLevel("player") or 0
+    -- Underdog bonus: killing someone higher level than you
     if victimLevel and victimLevel > 0 and myLevel > 0 and victimLevel > myLevel then
         local levelDiff = victimLevel - myLevel
         if levelDiff >= 6 then
-            points = points * 3  -- 6+ levels higher = triple points
+            points = math.floor(points * (gc.pointsUnderdogMultiplier6 or 3.0))
         elseif levelDiff >= 3 then
-            points = points * 2  -- 3-5 levels higher = double points
+            points = math.floor(points * (gc.pointsUnderdogMultiplier3 or 2.0))
         else
-            points = math.floor(points * 1.5)  -- 1-2 levels = 50% bonus
+            points = math.floor(points * 1.5)
         end
-        points = math.floor(points)
     end
 
     score.totalKills = score.totalKills + 1
@@ -347,6 +464,7 @@ function Deadpool:RecordKill(killerFullName, victimFullName, victimClass, victim
     -- Announce
     if self.db.settings.announceKills then
         local display = victimClass and self:ClassColor(victimClass, self:ShortName(victimFullName)) or self:ShortName(victimFullName)
+        local lvlStr = victimLevel and victimLevel > 0 and (self.colors.grey .. " [" .. victimLevel .. "]|r") or ""
         local typeTag = ""
         if hasBounty then
             typeTag = self.colors.gold .. " [BOUNTY]|r"
@@ -354,18 +472,14 @@ function Deadpool:RecordKill(killerFullName, victimFullName, victimClass, victim
             typeTag = self.colors.red .. " [KOS]|r"
         end
         local killerName = self:ShortName(killerFullName)
-        self:Print(self.colors.green .. killerName .. "|r killed " .. display .. typeTag ..
+        self:Print(self.colors.green .. killerName .. "|r killed " .. display .. lvlStr .. typeTag ..
             " in " .. self.colors.yellow .. zone .. "|r (+" .. points .. " pts)")
     end
 
-    -- Show kill streak messages
+    -- Kill streak + sound (only for YOUR kills)
     local score = self:GetOrCreateScore(killerFullName)
-    if score.killStreak == 3 then
-        self:Print(self.colors.orange .. self:ShortName(killerFullName) .. " is on a KILLING SPREE!|r")
-    elseif score.killStreak == 5 then
-        self:Print(self.colors.red .. self:ShortName(killerFullName) .. " is UNSTOPPABLE!|r")
-    elseif score.killStreak == 10 then
-        self:Print(self.colors.deadpool .. self:ShortName(killerFullName) .. " is GODLIKE! Maximum effort!|r")
+    if killerFullName == self:GetPlayerFullName() then
+        Deadpool:PlayKillSound(killType, score.killStreak)
     end
 
     -- Broadcast to guild

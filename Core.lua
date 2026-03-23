@@ -161,15 +161,261 @@ function Deadpool:TableCount(t)
 end
 
 function Deadpool:GetGuildRank()
-    if not IsInGuild() then return nil, nil end
+    if not IsInGuild() then return nil end
     local _, _, rankIndex = GetGuildInfo("player")
     return rankIndex or 99
+end
+
+function Deadpool:IsGM()
+    local rank = self:GetGuildRank()
+    return rank == 0
 end
 
 function Deadpool:IsOfficer()
     local rank = self:GetGuildRank()
     if not rank then return false end
     return rank <= (self.db.settings.officerRank or 1)
+end
+
+function Deadpool:IsManager()
+    if self:IsGM() then return true end
+    local myName = self:GetPlayerFullName()
+    local managers = self.db.guildConfig and self.db.guildConfig.managers
+    return managers and managers[myName] == true
+end
+
+function Deadpool:AwardPointsTo(targetName, amount, reason)
+    if not self:IsManager() then
+        self:Print(self.colors.red .. "Only managers can award points.|r")
+        return false
+    end
+    local fullName = self:NormalizeName(targetName)
+    if not fullName then
+        self:Print("Invalid player name.")
+        return false
+    end
+    if not amount or amount == 0 then
+        self:Print("Amount must be non-zero.")
+        return false
+    end
+    local score = self:GetOrCreateScore(fullName)
+    score.totalPoints = (score.totalPoints or 0) + amount
+    local verb = amount > 0 and "awarded" or "deducted"
+    local display = amount > 0 and ("+" .. amount) or tostring(amount)
+    self:Print(self.colors.gold .. display .. " pts|r " .. verb .. " to " .. self:ShortName(fullName) ..
+        (reason and reason ~= "" and (" (" .. reason .. ")") or ""))
+    if self.RefreshUI then self:RefreshUI() end
+    return true
+end
+
+-- Get point values from guild config (GM-managed, synced)
+function Deadpool:GetPointsConfig()
+    return self.db.guildConfig
+end
+
+----------------------------------------------------------------------
+-- Kill Sounds
+----------------------------------------------------------------------
+local SOUND_PATH = "Interface\\AddOns\\Deadpool\\Sounds\\"
+
+-- All available sounds (any sound can be used for any feature)
+local ALL_SOUNDS = {
+    -- Kill sounds
+    gunshot   = { name = "Gunshot",        file = SOUND_PATH .. "shot1.mp3",      category = "kill" },
+    impact1   = { name = "Impact Stomp 1", file = SOUND_PATH .. "impact1.mp3",    category = "kill" },
+    impact2   = { name = "Impact Stomp 2", file = SOUND_PATH .. "impact2.mp3",    category = "kill" },
+    impact3   = { name = "Impact Stomp 3", file = SOUND_PATH .. "impact3.mp3",    category = "kill" },
+    coin      = { name = "Coin",           file = SOUND_PATH .. "coin.mp3",       category = "kill" },
+    explosion = { name = "Explosion",      file = SOUND_PATH .. "explosion.mp3",  category = "kill" },
+    bomb      = { name = "Bomb",           file = SOUND_PATH .. "bomb.mp3",       category = "kill" },
+    -- Death sounds
+    partydeath = { name = "Oh Shit!",      file = SOUND_PATH .. "partydeath.mp3", category = "death" },
+    gameover1  = { name = "Game Over 1",   file = SOUND_PATH .. "gameover1.mp3",  category = "death" },
+    gameover2  = { name = "Game Over 2",   file = SOUND_PATH .. "gameover2.mp3",  category = "death" },
+    -- PVP engage / alert sounds
+    engage1   = { name = "Dark Logo",      file = SOUND_PATH .. "engage1.mp3",    category = "alert" },
+    siren     = { name = "Dirty Siren",    file = SOUND_PATH .. "siren.mp3",      category = "alert" },
+    laugh     = { name = "Scary Laugh",    file = SOUND_PATH .. "laugh.mp3",      category = "alert" },
+    warning   = { name = "Horror Warning", file = SOUND_PATH .. "warning.mp3",    category = "alert" },
+    maniac    = { name = "Maniac",         file = SOUND_PATH .. "maniac.mp3",     category = "alert" },
+    -- Silent
+    none      = { name = "None (silent)",  file = nil,                            category = "all" },
+}
+
+-- Streak announcer sounds
+local STREAK_SOUNDS = {
+    [2]  = { name = "DOUBLE KILL",     file = SOUND_PATH .. "doublekill.mp3" },
+    [3]  = { name = "TRIPLE KILL",     file = SOUND_PATH .. "triplekill.mp3" },
+    [4]  = { name = "QUAD KILL",       file = SOUND_PATH .. "quadkill.mp3" },
+    [5]  = { name = "RAMPAGE",         file = SOUND_PATH .. "rampage.mp3" },
+    [6]  = { name = "KILLING SPREE",   file = SOUND_PATH .. "killingspree.mp3" },
+    [7]  = { name = "DOMINATING",      file = SOUND_PATH .. "dominating.mp3" },
+    [8]  = { name = "UNSTOPPABLE",     file = SOUND_PATH .. "unstoppable.mp3" },
+    [9]  = { name = "MEGA KILL",       file = SOUND_PATH .. "megakill.mp3" },
+    [10] = { name = "GODLIKE",         file = SOUND_PATH .. "godlike.mp3" },
+    [15] = { name = "HOLY SHIT",       file = SOUND_PATH .. "holyshit.mp3" },
+    [20] = { name = "WICKED SICK",     file = SOUND_PATH .. "wickedsick.mp3" },
+    [25] = { name = "MONSTER KILL",    file = SOUND_PATH .. "monsterkill.mp3" },
+}
+
+function Deadpool:PlaySoundByKey(soundKey)
+    if not soundKey or soundKey == "none" then return end
+    local customSounds = self.db.settings.customKillSounds
+    if customSounds and customSounds[soundKey] then
+        PlaySoundFile(SOUND_PATH .. customSounds[soundKey], "Master")
+        return
+    end
+    local sound = ALL_SOUNDS[soundKey]
+    if sound and sound.file then
+        PlaySoundFile(sound.file, "Master")
+    end
+end
+
+function Deadpool:PlayKillSound(killType, streak)
+    if not self.db.settings.killSoundEnabled then return end
+    self:PlaySoundByKey(self.db.settings.killSound or "gunshot")
+
+    -- Streak announcer (plays AFTER the kill sound with a slight delay)
+    if self.db.settings.streakSoundsEnabled and streak and streak >= 2 then
+        C_Timer.After(0.3, function()
+            Deadpool:PlayStreakSound(streak)
+        end)
+    end
+end
+
+function Deadpool:PlayDeathSound()
+    local key = self.db.settings.deathSound
+    if key and key ~= "none" then
+        self:PlaySoundByKey(key)
+    end
+end
+
+function Deadpool:PlayPartyDeathSound()
+    local key = self.db.settings.partyDeathSound
+    if key and key ~= "none" then
+        self:PlaySoundByKey(key)
+    end
+end
+
+function Deadpool:PlayKOSAlertSound()
+    local key = self.db.settings.kosAlertSound
+    if key and key ~= "none" then
+        self:PlaySoundByKey(key)
+    end
+end
+
+function Deadpool:PlayPartyAttackSound()
+    local key = self.db.settings.partyAttackSound
+    if key and key ~= "none" then
+        self:PlaySoundByKey(key)
+    end
+end
+
+function Deadpool:PlayStreakSound(streak)
+    -- Find the highest matching streak tier
+    local bestMatch = nil
+    for threshold, data in pairs(STREAK_SOUNDS) do
+        if streak >= threshold and (not bestMatch or threshold > bestMatch) then
+            bestMatch = threshold
+        end
+    end
+
+    if bestMatch and STREAK_SOUNDS[bestMatch] then
+        local data = STREAK_SOUNDS[bestMatch]
+        PlaySoundFile(data.file, "Master")
+
+        -- Show streak text on screen if alert frame is enabled
+        if self.db.settings.showAlertFrame and streak == bestMatch then
+            self:ShowStreakAlert(data.name, streak)
+        end
+    end
+end
+
+function Deadpool:ShowStreakAlert(streakName, count)
+    if not DeadpoolAlertFrame then return end
+    local TM = self.modules.Theme
+    local alertText = DeadpoolAlertFrame.alertText or _G["DeadpoolAlertFrame"] and select(1, DeadpoolAlertFrame:GetRegions())
+
+    -- Use the existing alert system
+    local colors = {
+        [2] = "|cFFFFFF00",   -- yellow
+        [3] = "|cFFFF8800",   -- orange
+        [4] = "|cFFFF4400",   -- deep orange
+        [5] = "|cFFFF0000",   -- red
+        [6] = "|cFFFF0044",   -- crimson
+        [7] = "|cFFCC00FF",   -- purple
+        [8] = "|cFF8800FF",   -- violet
+        [9] = "|cFF4400FF",   -- indigo
+        [10] = "|cFFFF0000",  -- red
+        [15] = "|cFFFF0000",  -- red
+        [20] = "|cFFFF0000",  -- red
+        [25] = "|cFFFF0000",  -- red
+    }
+    local bestColor = "|cFFFFFF00"
+    for threshold, color in pairs(colors) do
+        if count >= threshold then bestColor = color end
+    end
+
+    self:Print(bestColor .. streakName .. "|r  (" .. count .. " kill streak!)")
+end
+
+function Deadpool:PreviewKillSound(soundKey)
+    soundKey = soundKey or self.db.settings.killSound or "gunshot"
+    self:PlaySoundByKey(soundKey)
+end
+
+function Deadpool:PreviewStreakSound(streak)
+    local data = STREAK_SOUNDS[streak]
+    if data then
+        PlaySoundFile(data.file, "Master")
+        self:Print(data.name .. " (streak " .. streak .. ")")
+    end
+end
+
+function Deadpool:AddCustomSound(displayName, filename)
+    if not self.db.settings.customKillSounds then
+        self.db.settings.customKillSounds = {}
+    end
+    local key = "custom_" .. displayName:lower():gsub("%s+", "_")
+    self.db.settings.customKillSounds[key] = filename
+    return key
+end
+
+function Deadpool:RemoveCustomSound(key)
+    if self.db.settings.customKillSounds then
+        self.db.settings.customKillSounds[key] = nil
+    end
+end
+
+function Deadpool:GetKillSoundOptions()
+    local options = {}
+    for key, data in pairs(ALL_SOUNDS) do
+        options[#options + 1] = key
+    end
+    -- Add custom sounds
+    if self.db and self.db.settings and self.db.settings.customKillSounds then
+        for key in pairs(self.db.settings.customKillSounds) do
+            options[#options + 1] = key
+        end
+    end
+    -- Sort: none last, rest alphabetical
+    table.sort(options, function(a, b)
+        if a == "none" then return false end
+        if b == "none" then return true end
+        local na = Deadpool:GetKillSoundName(a)
+        local nb = Deadpool:GetKillSoundName(b)
+        return na < nb
+    end)
+    return options
+end
+
+function Deadpool:GetKillSoundName(key)
+    if ALL_SOUNDS[key] then return ALL_SOUNDS[key].name end
+    if key:sub(1, 7) == "custom_" then
+        local name = key:sub(8):gsub("_", " ")
+        return name:sub(1,1):upper() .. name:sub(2) .. " *"
+    end
+    return key
 end
 
 ----------------------------------------------------------------------
@@ -202,13 +448,101 @@ SlashCmdList["DEADPOOL"] = function(msg)
         else
             Deadpool:Print("Usage: /dp remove <PlayerName>")
         end
-    elseif cmd == "bounty" then
-        local name, gold, maxKills = rest:match("^(%S+)%s+(%d+)%s*(%d*)$")
-        if name and gold then
-            maxKills = tonumber(maxKills) or 10
-            Deadpool:PlaceBounty(name, tonumber(gold), maxKills)
+    elseif cmd == "award" or cmd == "give" then
+        local name, amount, reason = rest:match("^(%S+)%s+(%-?%d+)%s*(.-)$")
+        if name and amount then
+            Deadpool:AwardPointsTo(name, tonumber(amount), reason)
         else
-            Deadpool:Print("Usage: /dp bounty <PlayerName> <gold> [maxKills]")
+            Deadpool:Print("Usage: /dp award <PlayerName> <points> [reason]")
+        end
+    elseif cmd == "manager" then
+        if not Deadpool:IsGM() then
+            Deadpool:Print(Deadpool.colors.red .. "Only the GM can manage the managers list.|r")
+        elseif rest == "" then
+            local mgrs = Deadpool.db.guildConfig.managers or {}
+            local names = {}
+            for n in pairs(mgrs) do names[#names + 1] = Deadpool:ShortName(n) end
+            if #names == 0 then
+                Deadpool:Print("No managers assigned. Usage: /dp manager add|remove <name>")
+            else
+                Deadpool:Print(Deadpool.colors.gold .. "Managers:|r " .. table.concat(names, ", "))
+            end
+        else
+            local action, name = rest:match("^(%S+)%s+(.+)$")
+            if action and name then
+                action = action:lower()
+                local fullName = Deadpool:NormalizeName(name)
+                if not fullName then
+                    Deadpool:Print("Invalid player name.")
+                elseif action == "add" then
+                    if not Deadpool.db.guildConfig.managers then Deadpool.db.guildConfig.managers = {} end
+                    Deadpool.db.guildConfig.managers[fullName] = true
+                    Deadpool:Print(Deadpool.colors.green .. Deadpool:ShortName(fullName) .. " added as manager.|r")
+                elseif action == "remove" or action == "rem" then
+                    if Deadpool.db.guildConfig.managers then
+                        Deadpool.db.guildConfig.managers[fullName] = nil
+                    end
+                    Deadpool:Print(Deadpool.colors.red .. Deadpool:ShortName(fullName) .. " removed as manager.|r")
+                else
+                    Deadpool:Print("Usage: /dp manager add|remove <name>")
+                end
+            else
+                Deadpool:Print("Usage: /dp manager add|remove <name>")
+            end
+        end
+    elseif cmd == "war" then
+        if not Deadpool:IsManager() then
+            Deadpool:Print(Deadpool.colors.red .. "Only managers can declare guild wars.|r")
+        elseif rest == "" then
+            local wars = Deadpool.db.guildConfig.warGuilds or {}
+            local names = {}
+            for g in pairs(wars) do names[#names + 1] = g end
+            if #names == 0 then
+                Deadpool:Print("No guild wars active. Usage: /dp war add|remove <guild name>")
+            else
+                Deadpool:Print(Deadpool.colors.red .. "Guild Wars:|r " .. table.concat(names, ", "))
+            end
+        else
+            local action, guildName = rest:match("^(%S+)%s+(.+)$")
+            if action and guildName then
+                action = action:lower()
+                if action == "add" or action == "declare" then
+                    if not Deadpool.db.guildConfig.warGuilds then Deadpool.db.guildConfig.warGuilds = {} end
+                    Deadpool.db.guildConfig.warGuilds[guildName] = true
+                    Deadpool:Print(Deadpool.colors.red .. "WAR DECLARED|r against <" .. guildName .. ">! All members are now KOS.")
+                    Deadpool:BroadcastGMConfig()
+                elseif action == "remove" or action == "end" or action == "peace" then
+                    if Deadpool.db.guildConfig.warGuilds then
+                        Deadpool.db.guildConfig.warGuilds[guildName] = nil
+                    end
+                    Deadpool:Print(Deadpool.colors.green .. "Peace declared|r with <" .. guildName .. ">. War guild KOS lifted.")
+                    Deadpool:BroadcastGMConfig()
+                else
+                    Deadpool:Print("Usage: /dp war add|remove <guild name>")
+                end
+            else
+                Deadpool:Print("Usage: /dp war add|remove <guild name>")
+            end
+        end
+    elseif cmd == "bounty" then
+        local name, amount, rest2 = rest:match("^(%S+)%s+(%d+)%s*(.*)$")
+        if name and amount then
+            local val = tonumber(amount)
+            -- Check for "pts" or "points" keyword to determine type
+            local bountyType = "gold"
+            local maxKills = 10
+            if rest2 then
+                local r2lower = rest2:lower()
+                if r2lower:find("pts") or r2lower:find("points") then
+                    bountyType = "points"
+                    maxKills = tonumber(rest2:match("(%d+)")) or 10
+                else
+                    maxKills = tonumber(rest2) or 10
+                end
+            end
+            Deadpool:PlaceBounty(name, val, maxKills, bountyType)
+        else
+            Deadpool:Print("Usage: /dp bounty <PlayerName> <amount> [maxKills|pts]")
         end
     elseif cmd == "score" or cmd == "leaderboard" or cmd == "lb" then
         Deadpool:ShowTab("scoreboard")
@@ -228,8 +562,6 @@ SlashCmdList["DEADPOOL"] = function(msg)
         Deadpool:Print("Enemies: " .. Deadpool:TableCount(Deadpool.db.enemySheet))
         Deadpool:Print("Kill Log: " .. #Deadpool.db.killLog)
         Deadpool:Print("Death Log: " .. #(Deadpool.db.deathLog or {}))
-        Deadpool:Print("Placeholder loaded: " .. tostring(Deadpool.db._placeholderLoaded))
-        Deadpool:Print("Placeholder version: " .. tostring(Deadpool.db._placeholderVersion))
         for name, _ in pairs(Deadpool.db.kosList) do
             Deadpool:Print("First KOS: " .. name)
             break
@@ -302,36 +634,6 @@ SlashCmdList["DEADPOOL"] = function(msg)
 
         Deadpool:Print(Deadpool.colors.green .. "Dedup complete:|r removed " .. removed .. " duplicate kills. " .. #cleaned .. " remaining.")
         if Deadpool.RefreshUI then Deadpool:RefreshUI() end
-    elseif cmd == "demo" then
-        -- Force wipe and regenerate demo data
-        Deadpool.db._placeholderLoaded = nil
-        Deadpool.db._placeholderVersion = nil
-        Deadpool.db.kosList = {}
-        Deadpool.db.bounties = {}
-        Deadpool.db.scoreboard = {}
-        Deadpool.db.enemySheet = {}
-        Deadpool.db.killLog = {}
-        Deadpool.db.deathLog = {}
-        Deadpool:LoadPlaceholderData()
-        Deadpool:Print(Deadpool.colors.green .. "Demo data regenerated:|r")
-        Deadpool:Print("  KOS: " .. Deadpool:TableCount(Deadpool.db.kosList))
-        Deadpool:Print("  Bounties: " .. Deadpool:TableCount(Deadpool.db.bounties))
-        Deadpool:Print("  Scoreboard: " .. Deadpool:TableCount(Deadpool.db.scoreboard))
-        Deadpool:Print("  Enemies: " .. Deadpool:TableCount(Deadpool.db.enemySheet))
-        Deadpool:Print("  Kill Log: " .. #Deadpool.db.killLog)
-        Deadpool:Print("  Death Log: " .. #Deadpool.db.deathLog)
-        if Deadpool.RefreshUI then Deadpool:RefreshUI() end
-    elseif cmd == "wipe" then
-        Deadpool.db._placeholderLoaded = nil
-        Deadpool.db._placeholderVersion = nil
-        Deadpool.db.kosList = {}
-        Deadpool.db.bounties = {}
-        Deadpool.db.scoreboard = {}
-        Deadpool.db.enemySheet = {}
-        Deadpool.db.killLog = {}
-        Deadpool.db.deathLog = {}
-        Deadpool:Print("All data wiped.")
-        if Deadpool.RefreshUI then Deadpool:RefreshUI() end
     else
         Deadpool:Print("Unknown command. Type " .. Deadpool.colors.yellow .. "/dp help|r for commands.")
     end
@@ -379,7 +681,7 @@ function Deadpool:Init()
     end
 
     -- Initialize modules in dependency order (Theme before UI)
-    local initOrder = { "Theme", "BountyManager", "KillTracker", "Sync", "UI", "Alerts" }
+    local initOrder = { "Theme", "BountyManager", "KillTracker", "Sync", "Nearby", "UI", "Alerts" }
     for _, name in ipairs(initOrder) do
         local mod = self.modules[name]
         if mod and mod.Init then
@@ -396,219 +698,102 @@ function Deadpool:Init()
     self:Print(self.colors.yellow .. "v" .. self.version .. "|r loaded. " ..
         self.colors.grey .. "Type /dp to open the hit list.|r")
 
-    -- Populate demo data for testing (remove before shipping)
-    -- Force regenerate if old demo data version
-    if self.db._placeholderVersion ~= 3 then
-        self.db._placeholderLoaded = nil
-        self.db.kosList = {}
-        self.db.bounties = {}
-        self.db.scoreboard = {}
-        self.db.enemySheet = {}
-        self.db.killLog = {}
-        self.db.deathLog = {}
-        self.db._placeholderVersion = 3
+    -- One-time cleanup: purge fake demo data from SavedVariables
+    if not self.db._demoPurged then
+        self:PurgeDemoData()
     end
-    self:LoadPlaceholderData()
 end
 
 ----------------------------------------------------------------------
--- Placeholder data for testing
+-- One-time demo data purge (remove after all accounts have loaded once)
 ----------------------------------------------------------------------
-function Deadpool:LoadPlaceholderData()
-    if self.db._placeholderLoaded then return end
-    self.db._placeholderLoaded = true
-
-    local realm = GetRealmName()
-    local fakeEnemies = {
-        { name = "Gankerface", class = "ROGUE", race = "Undead", level = 70, guild = "Wrath of Noobs" },
-        { name = "Cheesewheel", class = "MAGE", race = "Undead", level = 70, guild = "Lowbie Terrorz" },
-        { name = "Stabbymcstab", class = "ROGUE", race = "Orc", level = 68, guild = nil },
-        { name = "Darkshdow", class = "WARLOCK", race = "Undead", level = 70, guild = "Shadow Council" },
-        { name = "Griefdaddy", class = "WARRIOR", race = "Tauren", level = 70, guild = "Ganksquad" },
-        { name = "Frostitute", class = "MAGE", race = "Troll", level = 69, guild = "Ice Cold Killaz" },
-        { name = "Dotsndots", class = "WARLOCK", race = "Undead", level = 70, guild = "Shadow Council" },
-        { name = "Healznope", class = "PRIEST", race = "Undead", level = 70, guild = "Wrath of Noobs" },
-        { name = "Moonpunter", class = "DRUID", race = "Tauren", level = 70, guild = "Ganksquad" },
-        { name = "Critsworth", class = "HUNTER", race = "Orc", level = 70, guild = "Lowbie Terrorz" },
-        { name = "Shockadin", class = "PALADIN", race = "Blood Elf", level = 70, guild = "Wrath of Noobs" },
-        { name = "Sneakypeek", class = "ROGUE", race = "Blood Elf", level = 67, guild = nil },
-        { name = "Frostshawk", class = "SHAMAN", race = "Orc", level = 70, guild = "Ice Cold Killaz" },
-        { name = "Felburner", class = "WARLOCK", race = "Blood Elf", level = 70, guild = "Shadow Council" },
+function Deadpool:PurgeDemoData()
+    local fakeNames = {
+        "Gankerface", "Cheesewheel", "Stabbymcstab", "Darkshdow", "Griefdaddy",
+        "Frostitute", "Dotsndots", "Healznope", "Moonpunter", "Critsworth",
+        "Shockadin", "Sneakypeek", "Frostshawk", "Felburner",
+        "Thunderbro", "Slapmage", "Holycrit", "Tankenstein", "Arrowstorm",
+        "Dotweaver", "Critmachine", "Bubbleboy", "Wrathchild",
+        "Randogank", "Justpassing", "Whoopsidied", "Flagrunner", "Notaganker",
+        "Wpvpandy", "Oopsifell", "Wasntme",
     }
 
-    local fakeGuildies = {
-        { name = "Evildz" },
-        { name = "Thunderbro" },
-        { name = "Slapmage" },
-        { name = "Holycrit" },
-        { name = "Tankenstein" },
-        { name = "Arrowstorm" },
-        { name = "Dotweaver" },
-        { name = "Critmachine" },
-        { name = "Bubbleboy" },
-        { name = "Wrathchild" },
-    }
+    -- Build lookup set (match "Name-AnyRealm" keys)
+    local isFake = {}
+    for _, name in ipairs(fakeNames) do
+        isFake[name] = true
+    end
 
-    local zones = {
-        "Hellfire Peninsula", "Nagrand", "Terokkar Forest", "Zangarmarsh",
-        "Blade's Edge Mountains", "Shadowmoon Valley", "Netherstorm",
-        "Shattrath City", "Halaa", "Auchindoun",
-    }
-    local reasons = {
-        "Ganked at summoning stone", "Camped our alt", "Killed quest NPCs",
-        "Corpse camped 5x", "Wiped our dungeon group", "Killed lowbie guildies",
-        "Stole our ore node", "Ganked at flight path", "General scumbaggery",
-        "Jumped me at half HP", "Killed me during a quest turn-in",
-    }
+    local function isFakeKey(fullName)
+        local shortName = fullName and fullName:match("^(.+)%-") or fullName
+        return isFake[shortName]
+    end
 
-    -- KOS entries (all enemies)
-    for _, e in ipairs(fakeEnemies) do
-        local fullName = e.name .. "-" .. realm
-        if not self.db.kosList[fullName] then
-            self.db.kosList[fullName] = {
-                name = e.name, realm = realm, class = e.class, race = e.race,
-                level = e.level, guild = e.guild,
-                addedBy = fakeGuildies[math.random(#fakeGuildies)].name .. "-" .. realm,
-                addedDate = time() - math.random(86400, 604800),
-                reason = reasons[math.random(#reasons)],
-                totalKills = math.random(2, 25),
-                lastKilledBy = fakeGuildies[math.random(#fakeGuildies)].name .. "-" .. realm,
-                lastKilledTime = time() - math.random(600, 172800),
-                lastSeenZone = zones[math.random(#zones)],
-                lastSeenTime = time() - math.random(60, 7200),
-            }
+    local removed = { kos = 0, bounty = 0, score = 0, enemy = 0, kill = 0, death = 0 }
+
+    -- Purge keyed tables (kosList, bounties, scoreboard, enemySheet)
+    for fullName in pairs(self.db.kosList) do
+        if isFakeKey(fullName) then
+            self.db.kosList[fullName] = nil
+            removed.kos = removed.kos + 1
+        end
+    end
+    for fullName in pairs(self.db.bounties) do
+        if isFakeKey(fullName) then
+            self.db.bounties[fullName] = nil
+            removed.bounty = removed.bounty + 1
+        end
+    end
+    for fullName in pairs(self.db.scoreboard) do
+        if isFakeKey(fullName) then
+            self.db.scoreboard[fullName] = nil
+            removed.score = removed.score + 1
+        end
+    end
+    for fullName in pairs(self.db.enemySheet) do
+        if isFakeKey(fullName) then
+            self.db.enemySheet[fullName] = nil
+            removed.enemy = removed.enemy + 1
         end
     end
 
-    -- Bounties: 5 active, 3 expired
-    for i = 1, 8 do
-        local e = fakeEnemies[i]
-        local fullName = e.name .. "-" .. realm
-        if not self.db.bounties[fullName] then
-            local gold = math.random(1, 10) * 25
-            local maxK = math.random(5, 20)
-            local curK = math.random(0, maxK)
-            local expired = (i > 5)
-            if expired then curK = maxK end
-            local claims = {}
-            for c = 1, curK do
-                table.insert(claims, {
-                    killer = fakeGuildies[math.random(#fakeGuildies)].name .. "-" .. realm,
-                    time = time() - math.random(600, 259200),
-                    zone = zones[math.random(#zones)],
-                })
-            end
-            self.db.bounties[fullName] = {
-                target = fullName, bountyGold = gold,
-                placedBy = fakeGuildies[math.random(#fakeGuildies)].name .. "-" .. realm,
-                placedDate = time() - math.random(3600, 432000),
-                maxKills = maxK, currentKills = curK,
-                expired = expired,
-                expiredReason = expired and "Completed" or nil,
-                claims = claims,
-            }
+    -- Purge kill log (remove entries where killer OR victim is fake)
+    local cleanKills = {}
+    for _, entry in ipairs(self.db.killLog) do
+        if not isFakeKey(entry.killer) and not isFakeKey(entry.victim) then
+            table.insert(cleanKills, entry)
+        else
+            removed.kill = removed.kill + 1
         end
     end
+    self.db.killLog = cleanKills
 
-    -- Scoreboard: all guild members with varied stats
-    for i, g in ipairs(fakeGuildies) do
-        local fullName = g.name .. "-" .. realm
-        if not self.db.scoreboard[fullName] then
-            local kills = math.random(10, 150)
-            local kosK = math.random(5, math.floor(kills * 0.4))
-            local bountyK = math.random(0, math.floor(kills * 0.15))
-            local randomK = kills - kosK - bountyK
-            self.db.scoreboard[fullName] = {
-                name = fullName, totalKills = kills,
-                bountyKills = bountyK, kosKills = kosK,
-                randomKills = randomK,
-                totalPoints = randomK * 5 + kosK * 25 + bountyK * 100 + math.random(0, 200),
-                lastKill = time() - math.random(300, 86400 * 2),
-                killStreak = 0, bestStreak = math.random(2, 12),
-            }
+    -- Purge death log (remove entries where killer OR victim is fake)
+    local cleanDeaths = {}
+    for _, entry in ipairs(self.db.deathLog or {}) do
+        if not isFakeKey(entry.killer) and not isFakeKey(entry.victim) then
+            table.insert(cleanDeaths, entry)
+        else
+            removed.death = removed.death + 1
         end
     end
+    self.db.deathLog = cleanDeaths
 
-    -- Enemy sheet: all enemies
-    for _, e in ipairs(fakeEnemies) do
-        local fullName = e.name .. "-" .. realm
-        if not self.db.enemySheet[fullName] then
-            self.db.enemySheet[fullName] = {
-                name = fullName, class = e.class, race = e.race, level = e.level, guild = e.guild,
-                timesKilledUs = math.random(2, 18),
-                timesWeKilledThem = math.random(3, 30),
-                lastKilledUsTime = time() - math.random(600, 172800),
-                lastKilledUsBy = fakeGuildies[math.random(#fakeGuildies)].name .. "-" .. realm,
-                lastWeKilledTime = time() - math.random(300, 86400),
-                lastWeKilledBy = fakeGuildies[math.random(#fakeGuildies)].name .. "-" .. realm,
-                firstSeen = time() - math.random(86400, 604800),
-            }
-        end
+    -- Clean up placeholder flags
+    self.db._placeholderLoaded = nil
+    self.db._placeholderVersion = nil
+    self.db._demoPurged = true
+
+    local total = removed.kos + removed.bounty + removed.score + removed.enemy + removed.kill + removed.death
+    if total > 0 then
+        self:Print(self.colors.green .. "Demo data purged:|r " ..
+            removed.kos .. " KOS, " .. removed.bounty .. " bounties, " ..
+            removed.score .. " scores, " .. removed.enemy .. " enemies, " ..
+            removed.kill .. " kills, " .. removed.death .. " deaths removed.")
     end
-
-    -- Kill log: 40 KOS/bounty entries + 20 random PvP kills
-    for i = 1, 40 do
-        local killer = fakeGuildies[math.random(#fakeGuildies)]
-        local victim = fakeEnemies[math.random(#fakeEnemies)]
-        local vFullName = victim.name .. "-" .. realm
-        local isKOS = self:IsKOS(vFullName)
-        local isBounty = self:HasActiveBounty(vFullName)
-        local pts = isBounty and 100 or (isKOS and 25 or 5)
-        table.insert(self.db.killLog, {
-            killer = killer.name .. "-" .. realm,
-            victim = vFullName,
-            victimClass = victim.class, victimRace = victim.race, victimLevel = victim.level,
-            zone = zones[math.random(#zones)],
-            time = time() - math.random(60, 86400 * 5),
-            isKOS = isKOS, isBounty = isBounty, points = pts,
-            killType = isBounty and "bounty" or (isKOS and "kos" or "random"),
-        })
-    end
-
-    -- Random PvP kills (not on KOS list)
-    local randomEnemies = {
-        { name = "Randogank", class = "WARRIOR", race = "Orc", level = 70 },
-        { name = "Justpassing", class = "HUNTER", race = "Troll", level = 68 },
-        { name = "Whoopsidied", class = "MAGE", race = "Blood Elf", level = 66 },
-        { name = "Flagrunner", class = "DRUID", race = "Tauren", level = 70 },
-        { name = "Notaganker", class = "PALADIN", race = "Blood Elf", level = 70 },
-        { name = "Wpvpandy", class = "SHAMAN", race = "Orc", level = 69 },
-        { name = "Oopsifell", class = "PRIEST", race = "Undead", level = 67 },
-        { name = "Wasntme", class = "ROGUE", race = "Blood Elf", level = 70 },
-    }
-    for i = 1, 20 do
-        local killer = fakeGuildies[math.random(#fakeGuildies)]
-        local victim = randomEnemies[math.random(#randomEnemies)]
-        table.insert(self.db.killLog, {
-            killer = killer.name .. "-" .. realm,
-            victim = victim.name .. "-" .. realm,
-            victimClass = victim.class, victimRace = victim.race, victimLevel = victim.level,
-            zone = zones[math.random(#zones)],
-            time = time() - math.random(60, 86400 * 5),
-            isKOS = false, isBounty = false, points = 5,
-            killType = "random",
-        })
-    end
-
-    table.sort(self.db.killLog, function(a, b) return (a.time or 0) > (b.time or 0) end)
-
-    -- Death log: 20 entries (enemies killing guild members)
-    local myName = self:GetPlayerFullName()
-    for i = 1, 20 do
-        local killer = fakeEnemies[math.random(#fakeEnemies)]
-        local victim = (i <= 12) and myName or (fakeGuildies[math.random(#fakeGuildies)].name .. "-" .. realm)
-        table.insert(self.db.deathLog, {
-            killer = killer.name .. "-" .. realm,
-            victim = victim,
-            killerClass = killer.class, killerRace = killer.race,
-            zone = zones[math.random(#zones)],
-            time = time() - math.random(600, 86400 * 4),
-        })
-    end
-    table.sort(self.db.deathLog, function(a, b) return (a.time or 0) > (b.time or 0) end)
-
-    self:Print(self.colors.grey .. "Demo data loaded for testing (14 KOS, 8 bounties, 10 scoreboard, 40 kills, 20 deaths).|r")
 end
+
+
 
 Deadpool:RegisterEvent("ADDON_LOADED", function(event, addonName)
     if addonName == "Deadpool" then

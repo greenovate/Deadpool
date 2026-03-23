@@ -177,14 +177,14 @@ function UI:CreateMainFrame()
     -- Title bar
     local titleBar = CreateFrame("Frame", nil, mainFrame)
     titleBar:SetHeight(26)
-    titleBar:SetPoint("TOPLEFT", 0, 0)
-    titleBar:SetPoint("TOPRIGHT", 0, 0)
+    titleBar:SetPoint("TOPLEFT", 2, -2)
+    titleBar:SetPoint("TOPRIGHT", -2, -2)
     mainFrame.titleBar = titleBar
 
     local titleBg = titleBar:CreateTexture(nil, "BACKGROUND")
     titleBg:SetAllPoints()
     local t = Deadpool.modules.Theme.active
-    titleBg:SetColorTexture(t.accent[1] * 0.5, t.accent[2] * 0.5, t.accent[3] * 0.5, 0.95)
+    titleBg:SetColorTexture(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.95)
     mainFrame.titleBarBg = titleBg
 
     local titleText = titleBar:CreateFontString(nil, "OVERLAY")
@@ -235,17 +235,53 @@ function UI:CreateMainFrame()
     -- Content area
     self:CreateContentArea()
 
-    -- Status bar
-    statusText = mainFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    statusText:SetPoint("BOTTOMLEFT", mainFrame, "BOTTOMLEFT", 12, 8)
-    statusText:SetTextColor(0.5, 0.5, 0.5)
+    -- Bottom status bar (proper anchored panel)
+    local bottomBar = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
+    bottomBar:SetHeight(26)
+    bottomBar:SetPoint("BOTTOMLEFT", mainFrame, "BOTTOMLEFT", 2, 2)
+    bottomBar:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -2, 2)
+    bottomBar:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+    })
+    local t = Deadpool.modules.Theme.active
+    bottomBar:SetBackdropColor(t.headerBg[1], t.headerBg[2], t.headerBg[3], 0.95)
+    mainFrame.bottomBar = bottomBar
 
-    -- Bottom buttons
-    local addBtn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
-    addBtn:SetSize(100, 22)
-    addBtn:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -28, 6)
-    addBtn:SetText("Add Target")
-    addBtn:SetScript("OnClick", function()
+    -- Status text (left side)
+    statusText = bottomBar:CreateFontString(nil, "OVERLAY")
+    statusText:SetFont(Deadpool.modules.Theme:GetFont(11, ""))
+    statusText:SetPoint("LEFT", bottomBar, "LEFT", 10, 0)
+    statusText:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+
+    -- Custom themed buttons (right side of bottom bar)
+    local function CreateThemedButton(parent, width, text, onClick)
+        local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
+        btn:SetSize(width, 20)
+        btn:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+        })
+        btn:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
+        btn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+        btn._label = btn:CreateFontString(nil, "OVERLAY")
+        btn._label:SetFont(Deadpool.modules.Theme:GetFont(11, ""))
+        btn._label:SetPoint("CENTER")
+        btn._label:SetText(text)
+        btn._label:SetTextColor(t.text[1], t.text[2], t.text[3])
+        btn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(t.accent[1] * 0.5, t.accent[2] * 0.5, t.accent[3] * 0.5, 1)
+            self:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 1)
+        end)
+        btn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
+            self:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+        end)
+        btn:SetScript("OnClick", onClick)
+        return btn
+    end
+
+    local addBtn = CreateThemedButton(bottomBar, 90, "Add Target", function()
         if UnitExists("target") and UnitIsPlayer("target") and UnitIsEnemy("player", "target") then
             local fullName = Deadpool:GetUnitFullName("target")
             if fullName then Deadpool:AddToKOS(fullName, "") end
@@ -253,12 +289,14 @@ function UI:CreateMainFrame()
             StaticPopup_Show("DEADPOOL_ADD_KOS")
         end
     end)
+    addBtn:SetPoint("RIGHT", bottomBar, "RIGHT", -8, 0)
+    mainFrame.addBtn = addBtn
 
-    local syncBtn = CreateFrame("Button", nil, mainFrame, "UIPanelButtonTemplate")
-    syncBtn:SetSize(60, 22)
-    syncBtn:SetPoint("RIGHT", addBtn, "LEFT", -4, 0)
-    syncBtn:SetText("Sync")
-    syncBtn:SetScript("OnClick", function() Deadpool:RequestSync() end)
+    local syncBtn = CreateThemedButton(bottomBar, 55, "Sync", function()
+        Deadpool:RequestSync()
+    end)
+    syncBtn:SetPoint("RIGHT", addBtn, "LEFT", -6, 0)
+    mainFrame.syncBtn = syncBtn
 
     -- Popup dialogs
     StaticPopupDialogs["DEADPOOL_ADD_KOS"] = {
@@ -266,11 +304,11 @@ function UI:CreateMainFrame()
         button1 = "Add", button2 = "Cancel",
         hasEditBox = true, maxLetters = 64,
         OnAccept = function(self)
-            local name = self.editBox:GetText()
+            local name = self.EditBox:GetText()
             if name and name ~= "" then Deadpool:AddToKOS(name, "") end
         end,
         EditBoxOnEnterPressed = function(self)
-            local name = self:GetParent().editBox:GetText()
+            local name = self:GetParent().EditBox:GetText()
             if name and name ~= "" then Deadpool:AddToKOS(name, "") end
             self:GetParent():Hide()
         end,
@@ -278,18 +316,64 @@ function UI:CreateMainFrame()
     }
 
     StaticPopupDialogs["DEADPOOL_PLACE_BOUNTY"] = {
-        text = "Place bounty on %s\nEnter gold amount:",
-        button1 = "Place Bounty", button2 = "Cancel",
+        text = "Place bounty on %s\nEnter amount (gold or points):",
+        button1 = "Gold Bounty", button2 = "Cancel", button3 = "Points Bounty",
         hasEditBox = true, maxLetters = 10,
         OnAccept = function(self, data)
-            local gold = tonumber(self.editBox:GetText())
-            if gold and gold > 0 and data then Deadpool:PlaceBounty(data, gold, 10) end
+            local val = tonumber(self.EditBox:GetText())
+            if val and val > 0 and data then Deadpool:PlaceBounty(data, val, 10, "gold") end
+        end,
+        OnAlt = function(self, data)
+            local val = tonumber(self.EditBox:GetText())
+            if val and val > 0 and data then Deadpool:PlaceBounty(data, val, 10, "points") end
         end,
         EditBoxOnEnterPressed = function(self)
-            local gold = tonumber(self:GetParent().editBox:GetText())
+            local val = tonumber(self:GetParent().EditBox:GetText())
             local data = self:GetParent().data
-            if gold and gold > 0 and data then Deadpool:PlaceBounty(data, gold, 10) end
+            if val and val > 0 and data then Deadpool:PlaceBounty(data, val, 10, "gold") end
             self:GetParent():Hide()
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+
+    StaticPopupDialogs["DEADPOOL_CONTRIBUTE_BOUNTY"] = {
+        text = "Contribute to bounty on %s\nEnter amount:",
+        button1 = "Add Gold", button2 = "Cancel", button3 = "Add Points",
+        hasEditBox = true, maxLetters = 10,
+        OnAccept = function(self, data)
+            local val = tonumber(self.EditBox:GetText())
+            if val and val > 0 and data then Deadpool:ContributeToBounty(data, val, "gold") end
+        end,
+        OnAlt = function(self, data)
+            local val = tonumber(self.EditBox:GetText())
+            if val and val > 0 and data then Deadpool:ContributeToBounty(data, val, "points") end
+        end,
+        EditBoxOnEnterPressed = function(self)
+            local val = tonumber(self:GetParent().EditBox:GetText())
+            local data = self:GetParent().data
+            if val and val > 0 and data then Deadpool:ContributeToBounty(data, val, "gold") end
+            self:GetParent():Hide()
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+
+    StaticPopupDialogs["DEADPOOL_EDIT_BOUNTY_KILLS"] = {
+        text = "Edit max kills for bounty on %s\nEnter new kill target:",
+        button1 = "Save", button2 = "Cancel",
+        hasEditBox = true, maxLetters = 6,
+        OnAccept = function(self, data)
+            local val = tonumber(self.EditBox:GetText())
+            if val and val >= 1 and data then Deadpool:EditBountyKills(data, val) end
+        end,
+        EditBoxOnEnterPressed = function(self)
+            local val = tonumber(self:GetParent().EditBox:GetText())
+            local data = self:GetParent().data
+            if val and val >= 1 and data then Deadpool:EditBountyKills(data, val) end
+            self:GetParent():Hide()
+        end,
+        OnShow = function(self, data)
+            local bounty = data and Deadpool.db.bounties[data]
+            if bounty then self.EditBox:SetText(tostring(bounty.maxKills or 10)) end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
@@ -326,14 +410,16 @@ function UI:CreateTabs()
 end
 
 function UI:LayoutTabs()
-    local fw = mainFrame:GetWidth()
-    local tabWidth = math.floor((fw - 20) / #TABS)
+    local totalWidth = FRAME_WIDTH - 2  -- 1px padding each side
+    local gap = 1
+    local totalGaps = (#TABS - 1) * gap
+    local tabWidth = math.floor((totalWidth - totalGaps) / #TABS)
     for _, tabDef in ipairs(TABS) do
         local btn = tabButtons[tabDef.key]
         local i = btn._index
         btn:ClearAllPoints()
-        btn:SetSize(tabWidth - 2, TAB_HEIGHT)
-        btn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10 + (i - 1) * tabWidth, -26)
+        btn:SetSize(tabWidth, TAB_HEIGHT)
+        btn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 1 + (i - 1) * (tabWidth + gap), -26)
     end
 end
 
@@ -357,6 +443,12 @@ function UI:SelectTab(key)
     if dashboardFrame then dashboardFrame:Hide() end
     if UI.settingsPanel then UI.settingsPanel:Hide() end
 
+    -- Reset scroll on tab switch
+    scrollOffset = 0
+    if contentArea and contentArea.scrollBar then
+        contentArea.scrollBar:SetValue(0)
+    end
+
     -- Show only the one we need
     if key == "dashboard" then
         if dashboardFrame then dashboardFrame:Show(); self:RenderDashboard() end
@@ -371,14 +463,15 @@ end
 -- Filter bar
 ----------------------------------------------------------------------
 local filterBox
+local filterBar  -- stored so we can show/hide per tab
 function UI:CreateFilterBar()
-    local bar = CreateFrame("Frame", nil, mainFrame)
-    bar:SetSize(FRAME_WIDTH - 20, 24)
-    bar:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
+    filterBar = CreateFrame("Frame", nil, mainFrame)
+    filterBar:SetSize(FRAME_WIDTH - 20, 24)
+    filterBar:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
 
-    filterBox = CreateFrame("EditBox", "DeadpoolFilterBox", bar, "InputBoxTemplate")
+    filterBox = CreateFrame("EditBox", "DeadpoolFilterBox", filterBar, "InputBoxTemplate")
     filterBox:SetSize(240, 20)
-    filterBox:SetPoint("LEFT", bar, "LEFT", 4, 0)
+    filterBox:SetPoint("LEFT", filterBar, "LEFT", 4, 0)
     filterBox:SetAutoFocus(false)
     filterBox:SetMaxLetters(64)
 
@@ -397,49 +490,111 @@ function UI:CreateFilterBar()
         if self:GetText() == "" then ph:Show() end
     end)
     filterBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    -- "Show Mine" toggle button
+    local mineBtn = CreateFrame("Button", nil, filterBar)
+    mineBtn:SetSize(80, 20)
+    mineBtn:SetPoint("LEFT", filterBox, "RIGHT", 10, 0)
+    local TM = Deadpool.modules.Theme
+    local t = TM.active
+
+    mineBtn.text = mineBtn:CreateFontString(nil, "OVERLAY")
+    mineBtn.text:SetFont(TM:GetFont(11, ""))
+    mineBtn.text:SetPoint("CENTER")
+    mineBtn.text:SetText("Show Mine")
+    mineBtn.text:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+
+    mineBtn:SetScript("OnClick", function()
+        UI.showMineOnly = not UI.showMineOnly
+        if UI.showMineOnly then
+            mineBtn.text:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
+            mineBtn.text:SetText("Mine Only")
+        else
+            mineBtn.text:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+            mineBtn.text:SetText("Show Mine")
+        end
+        scrollOffset = 0
+        UI:RefreshContent()
+    end)
+    UI.showMineOnly = false
+    filterBar._mineBtn = mineBtn
 end
 
 ----------------------------------------------------------------------
--- Content area — simple frame with manual scroll offset (no FauxScrollFrame)
+-- Content area with proper scroll bar
 ----------------------------------------------------------------------
-local scrollOffset = 0  -- shared scroll offset, reset on tab switch
+local scrollOffset = 0
+local scrollMaxOffset = 0
 
 function UI:CreateContentArea()
     contentArea = CreateFrame("Frame", nil, mainFrame)
     contentArea:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -80)
-    contentArea:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 28)
+    contentArea:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 32)
 
-    -- Headers
+    -- Column headers
     contentArea.headerFrame = CreateFrame("Frame", nil, contentArea)
-    contentArea.headerFrame:SetSize(FRAME_WIDTH - 22, HEADER_HEIGHT)
-    contentArea.headerFrame:SetPoint("TOPLEFT")
+    contentArea.headerFrame:SetHeight(HEADER_HEIGHT)
+    contentArea.headerFrame:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 0, 0)
+    contentArea.headerFrame:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -16, 0)
     local hdrBg = contentArea.headerFrame:CreateTexture(nil, "BACKGROUND")
     hdrBg:SetAllPoints()
     hdrBg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
 
-    -- Row container (direct child of contentArea, below header)
+    -- Row container (between header and bottom, with space for scrollbar)
     local rowContainer = CreateFrame("Frame", nil, contentArea)
-    rowContainer:SetPoint("TOPLEFT", contentArea.headerFrame, "BOTTOMLEFT", 0, -2)
-    rowContainer:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", 0, 0)
+    rowContainer:SetPoint("TOPLEFT", contentArea.headerFrame, "BOTTOMLEFT", 0, -1)
+    rowContainer:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", -16, 0)
+    rowContainer:SetClipsChildren(true)  -- CLIP rows that extend past bounds
+    contentArea.rowContainer = rowContainer
 
-    -- Mouse wheel scrolling
+    -- Scroll bar (Slider on the right edge)
+    local scrollBar = CreateFrame("Slider", nil, contentArea, "BackdropTemplate")
+    scrollBar:SetWidth(14)
+    scrollBar:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", 0, -HEADER_HEIGHT - 1)
+    scrollBar:SetPoint("BOTTOMRIGHT", contentArea, "BOTTOMRIGHT", 0, 0)
+    scrollBar:SetOrientation("VERTICAL")
+    scrollBar:SetMinMaxValues(0, 1)
+    scrollBar:SetValue(0)
+    scrollBar:SetValueStep(1)
+    scrollBar:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    local t = Deadpool.modules.Theme.active
+    scrollBar:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.5)
+    scrollBar:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.3)
+
+    -- Scroll bar thumb
+    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
+    thumb:SetSize(12, 40)
+    thumb:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.6)
+    scrollBar:SetThumbTexture(thumb)
+
+    scrollBar:SetScript("OnValueChanged", function(self, value)
+        scrollOffset = math.floor(value + 0.5)
+        UI:RenderCurrentTab()
+    end)
+
+    -- Mouse wheel on row container
     rowContainer:EnableMouseWheel(true)
     rowContainer:SetScript("OnMouseWheel", function(self, delta)
         scrollOffset = scrollOffset - delta
         if scrollOffset < 0 then scrollOffset = 0 end
-        -- Clamp handled in render functions
-        UI:RefreshContent()
+        if scrollOffset > scrollMaxOffset then scrollOffset = scrollMaxOffset end
+        scrollBar:SetValue(scrollOffset)
     end)
 
-    contentArea.rowContainer = rowContainer
+    contentArea.scrollBar = scrollBar
     contentArea.rows = {}
 
-    local visibleRows = math.floor((FRAME_HEIGHT - 140) / ROW_HEIGHT) + 2
+    -- Create row pool
+    local visibleRows = math.floor((FRAME_HEIGHT - 146) / ROW_HEIGHT) + 1
     for i = 1, visibleRows do
         contentArea.rows[i] = self:CreateRow(rowContainer, i)
     end
 
-    -- Create dashboard frame (separate from scroll content)
+    -- Create dashboard frame
     self:CreateDashboardFrame()
 end
 
@@ -448,7 +603,7 @@ end
 ----------------------------------------------------------------------
 function UI:CreateRow(parent, index)
     local row = CreateFrame("Button", nil, parent)
-    row:SetSize(FRAME_WIDTH - 44, ROW_HEIGHT)
+    row:SetSize(FRAME_WIDTH - 50, ROW_HEIGHT)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -(index - 1) * ROW_HEIGHT)
 
     row.bg = row:CreateTexture(nil, "BACKGROUND")
@@ -465,6 +620,16 @@ function UI:CreateRow(parent, index)
     end
 
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+
+    -- Mouse wheel propagation to scrollbar
+    row:EnableMouseWheel(true)
+    row:SetScript("OnMouseWheel", function(_, delta)
+        scrollOffset = scrollOffset - delta
+        if scrollOffset < 0 then scrollOffset = 0 end
+        if scrollOffset > scrollMaxOffset then scrollOffset = scrollMaxOffset end
+        if contentArea.scrollBar then contentArea.scrollBar:SetValue(scrollOffset) end
+    end)
+
     row:SetScript("OnClick", function(self, button)
         if button == "RightButton" and self.data then
             UI:ShowRowContextMenu(self)
@@ -507,12 +672,29 @@ function UI:ShowRowContextMenu(row)
     elseif activeTab == "bounties" then
         table.insert(menuList, { text = "Bounty: " .. Deadpool:ShortName(fullName), isTitle = true, notCheckable = true })
         if not data.expired then
+            table.insert(menuList, { text = "Add Gold / Points", notCheckable = true, func = function()
+                local d = StaticPopup_Show("DEADPOOL_CONTRIBUTE_BOUNTY", Deadpool:ShortName(fullName))
+                if d then d.data = fullName end
+            end })
+            local myName = Deadpool:GetPlayerFullName()
+            if data.placedBy == myName or Deadpool:IsManager() then
+                table.insert(menuList, { text = "Edit Max Kills", notCheckable = true, func = function()
+                    local d = StaticPopup_Show("DEADPOOL_EDIT_BOUNTY_KILLS", Deadpool:ShortName(fullName))
+                    if d then d.data = fullName end
+                end })
+            end
             table.insert(menuList, { text = "Expire Bounty", notCheckable = true, func = function()
-                if Deadpool.db.bounties[fullName] then
-                    Deadpool.db.bounties[fullName].expired = true
-                    Deadpool.db.bounties[fullName].expiredReason = "Manually expired"
-                    Deadpool:BumpSyncVersion()
-                    Deadpool:RefreshUI()
+                local b = Deadpool.db.bounties[fullName]
+                if b then
+                    local placerOrManager = b.placedBy == Deadpool:GetPlayerFullName() or Deadpool:IsManager()
+                    if placerOrManager then
+                        b.expired = true
+                        b.expiredReason = "Manually expired"
+                        Deadpool:BumpSyncVersion()
+                        Deadpool:RefreshUI()
+                    else
+                        Deadpool:Print(Deadpool.colors.red .. "Only the placer or a manager can expire this bounty.|r")
+                    end
                 end
             end })
         end
@@ -530,10 +712,21 @@ function UI:ShowRowContextMenu(row)
     end
 
     table.insert(menuList, { text = "Cancel", notCheckable = true })
-    EasyMenu(menuList, ctxMenu, "cursor", 0, 0, "MENU")
+
+    -- TBC Classic doesn't have EasyMenu — use UIDropDownMenu_Initialize
+    UIDropDownMenu_Initialize(ctxMenu, function(self, level)
+        for _, item in ipairs(menuList) do
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = item.text
+            info.isTitle = item.isTitle
+            info.notCheckable = item.notCheckable ~= false
+            info.func = item.func
+            UIDropDownMenu_AddButton(info, level or 1)
+        end
+    end, "MENU")
+    ToggleDropDownMenu(1, nil, ctxMenu, "cursor", 0, 0)
 end
 
-----------------------------------------------------------------------
 ----------------------------------------------------------------------
 -- Refresh dispatcher
 ----------------------------------------------------------------------
@@ -542,16 +735,53 @@ function UI:RefreshContent()
     self:LayoutTabs()
 
     if activeTab == "dashboard" or activeTab == "settings" then
+        if filterBar then filterBar:Hide() end
         return
     end
 
     if dashboardFrame then dashboardFrame:Hide() end
     if UI.settingsPanel then UI.settingsPanel:Hide() end
+
+    -- Filter bar: show only on filterable tabs, reposition content accordingly
+    local showFilter = (activeTab == "kos" or activeTab == "bounties" or activeTab == "enemies"
+        or activeTab == "killlog")
+    -- Show Mine button: only on tabs where it makes sense
+    local showMine = (activeTab == "bounties" or activeTab == "killlog")
+    if filterBar then
+        if showFilter then
+            filterBar:Show()
+            -- Show/hide the Show Mine button within the filter bar
+            if filterBar._mineBtn then
+                if showMine then
+                    filterBar._mineBtn:Show()
+                else
+                    filterBar._mineBtn:Hide()
+                end
+            end
+        else
+            filterBar:Hide()
+        end
+    end
+    if contentArea then
+        contentArea:ClearAllPoints()
+        if showFilter then
+            contentArea:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -80)
+        else
+            contentArea:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
+        end
+        contentArea:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 32)
+    end
+
     contentArea:Show()
 
-    -- Reset scroll to top on tab switch
-    scrollOffset = 0
+    self:RenderCurrentTab()
+end
 
+-- Render without resetting scroll (called by scrollbar and mouse wheel)
+function UI:RenderCurrentTab()
+    if not contentArea then return end
+
+    -- Reset row click handlers
     for _, row in ipairs(contentArea.rows) do
         row:SetScript("OnClick", function(self, button)
             if button == "RightButton" and self.data then
@@ -566,6 +796,11 @@ function UI:RefreshContent()
     elseif activeTab == "scoreboard" then self:RenderScoreboard()
     elseif activeTab == "mystats" then self:RenderMyStats()
     elseif activeTab == "killlog" then self:RenderKillLog()
+    end
+
+    -- Update scrollbar range
+    if contentArea.scrollBar then
+        contentArea.scrollBar:SetMinMaxValues(0, math.max(0, scrollMaxOffset))
     end
 end
 
@@ -633,13 +868,21 @@ function UI:RenderKOSList()
         { text = "Name",      x = 4,   w = 150 },
         { text = "Class",     x = 156, w = 80 },
         { text = "Lvl",       x = 238, w = 30 },
-        { text = "Kills",     x = 270, w = 50 },
-        { text = "Last Kill", x = 322, w = 100 },
-        { text = "Last Seen", x = 424, w = 140 },
-        { text = "Bounty",    x = 566, w = 65 },
-        { text = "Reason",    x = 633, w = 280 }
+        { text = "Our Kills", x = 270, w = 60 },
+        { text = "Their Kills", x = 332, w = 65 },
+        { text = "Last Seen", x = 399, w = 140 },
+        { text = "Bounty",    x = 541, w = 65 },
+        { text = "Reason",    x = 608, w = 305 }
     )
     local data = Deadpool:GetKOSSorted("totalKills", false)
+    local myName = Deadpool:GetPlayerFullName()
+    if UI.showMineOnly then
+        local f = {}
+        for _, e in ipairs(data) do
+            if e.addedBy == myName or e.lastKilledBy == myName then table.insert(f, e) end
+        end
+        data = f
+    end
     if filterText ~= "" then
         local f = {}
         for _, e in ipairs(data) do
@@ -650,6 +893,8 @@ function UI:RenderKOSList()
     end
     local numRows = #data
     local visibleRows = #contentArea.rows
+    scrollMaxOffset = math.max(0, numRows - visibleRows)
+    if scrollOffset > scrollMaxOffset then scrollOffset = scrollMaxOffset end
     local offset = scrollOffset
     for i = 1, visibleRows do
         local row = contentArea.rows[i]
@@ -660,17 +905,27 @@ function UI:RenderKOSList()
             SetCol(row, 1, 4, 150, name)
             SetCol(row, 2, 156, 80, e.class and Deadpool:ClassColor(e.class, e.class) or "?")
             SetCol(row, 3, 238, 30, e.level and tostring(e.level) or "?")
-            SetCol(row, 4, 270, 50, tostring(e.totalKills or 0))
-            SetCol(row, 5, 322, 100, Deadpool:TimeAgo(e.lastKilledTime))
+            SetCol(row, 4, 270, 60, Deadpool.colors.green .. tostring(e.totalKills or 0) .. "|r")
+            -- Their kills on us from enemy sheet
+            local enemy = Deadpool.demoData:GetMergedEnemySheet()[e._key]
+            local theirKills = enemy and enemy.timesKilledUs or 0
+            local theirColor = theirKills > 0 and Deadpool.colors.red or Deadpool.colors.grey
+            SetCol(row, 5, 332, 65, theirColor .. tostring(theirKills) .. "|r")
             local seenText = e.lastSeenZone and (e.lastSeenZone .. " " .. Deadpool:TimeAgo(e.lastSeenTime)) or "-"
-            SetCol(row, 6, 424, 140, seenText)
+            SetCol(row, 6, 399, 140, seenText)
             local bText = ""
             if Deadpool:HasActiveBounty(e._key) then
                 local b = Deadpool:GetBounty(e._key)
-                bText = Deadpool.colors.gold .. b.bountyGold .. "g|r"
+                if (b.bountyPoints or 0) > 0 and (b.bountyGold or 0) > 0 then
+                    bText = Deadpool.colors.gold .. (b.bountyGold or 0) .. "g|r+" .. Deadpool.colors.yellow .. (b.bountyPoints or 0) .. "p|r"
+                elseif (b.bountyPoints or 0) > 0 then
+                    bText = Deadpool.colors.yellow .. (b.bountyPoints or 0) .. "pts|r"
+                else
+                    bText = Deadpool.colors.gold .. (b.bountyGold or 0) .. "g|r"
+                end
             end
-            SetCol(row, 7, 566, 65, bText)
-            SetCol(row, 8, 633, 280, Deadpool.colors.grey .. (e.reason or "") .. "|r")
+            SetCol(row, 7, 541, 65, bText)
+            SetCol(row, 8, 608, 305, Deadpool.colors.grey .. (e.reason or "") .. "|r")
             row.tooltipFunc = function()
                 GameTooltip:AddLine(name, 1, 1, 1)
                 if e.race then GameTooltip:AddLine("Race: " .. e.race, 0.7, 0.7, 0.7) end
@@ -707,6 +962,8 @@ function UI:RenderBounties()
     end
     local numRows = #data
     local visibleRows = #contentArea.rows
+    scrollMaxOffset = math.max(0, numRows - visibleRows)
+    if scrollOffset > scrollMaxOffset then scrollOffset = scrollMaxOffset end
     local offset = scrollOffset
     for i = 1, visibleRows do
         local row = contentArea.rows[i]
@@ -717,7 +974,15 @@ function UI:RenderBounties()
             local cn = kos and kos.class
             local nm = cn and Deadpool:ClassColor(cn, Deadpool:ShortName(e.target)) or Deadpool:ShortName(e.target)
             SetCol(row, 1, 4, 180, nm)
-            SetCol(row, 2, 186, 110, Deadpool.colors.gold .. (e.bountyGold or 0) .. "g|r")
+            local reward
+            if (e.bountyType == "points" or (e.bountyPoints or 0) > 0) and (e.bountyGold or 0) == 0 then
+                reward = Deadpool.colors.yellow .. (e.bountyPoints or 0) .. " pts|r"
+            elseif (e.bountyPoints or 0) > 0 then
+                reward = Deadpool.colors.gold .. (e.bountyGold or 0) .. "g|r" .. " + " .. Deadpool.colors.yellow .. (e.bountyPoints or 0) .. " pts|r"
+            else
+                reward = Deadpool.colors.gold .. (e.bountyGold or 0) .. "g|r"
+            end
+            SetCol(row, 2, 186, 110, reward)
             SetCol(row, 3, 298, 130, (e.currentKills or 0) .. " / " .. (e.maxKills or 10))
             SetCol(row, 4, 430, 160, Deadpool:ShortName(e.placedBy or "?"))
             SetCol(row, 5, 592, 140, Deadpool:TimeAgo(e.placedDate))
@@ -729,7 +994,12 @@ function UI:RenderBounties()
             HideCols(row, 7, 8)
             row.tooltipFunc = function()
                 GameTooltip:AddLine("Bounty: " .. Deadpool:ShortName(e.target), 1, 0.84, 0)
-                GameTooltip:AddLine(Deadpool:FormatGold(e.bountyGold) .. " for " .. (e.maxKills or 10) .. " kills", 0.7, 0.7, 0.7)
+                local tipReward = ""
+                if (e.bountyGold or 0) > 0 then tipReward = Deadpool:FormatGold(e.bountyGold) end
+                if (e.bountyPoints or 0) > 0 then
+                    tipReward = tipReward .. (tipReward ~= "" and " + " or "") .. (e.bountyPoints or 0) .. " pts"
+                end
+                GameTooltip:AddLine(tipReward .. " for " .. (e.maxKills or 10) .. " kills", 0.7, 0.7, 0.7)
                 if e.claims and #e.claims > 0 then
                     GameTooltip:AddLine(" "); GameTooltip:AddLine("Claims:", 0.9, 0.5, 0.5)
                     for _, c in ipairs(e.claims) do
@@ -770,6 +1040,8 @@ function UI:RenderEnemies()
     end
     local numRows = #data
     local visibleRows = #contentArea.rows
+    scrollMaxOffset = math.max(0, numRows - visibleRows)
+    if scrollOffset > scrollMaxOffset then scrollOffset = scrollMaxOffset end
     local offset = scrollOffset
     for i = 1, visibleRows do
         local row = contentArea.rows[i]
@@ -807,7 +1079,7 @@ function UI:RenderEnemies()
             end
         else row:Hide(); row.data = nil end
     end
-    statusText:SetText(Deadpool:TableCount(Deadpool.db.enemySheet) .. " enemy players tracked")
+    statusText:SetText(Deadpool:TableCount(Deadpool.demoData:GetMergedEnemySheet()) .. " enemy players tracked")
 end
 
 ----------------------------------------------------------------------
@@ -834,6 +1106,8 @@ function UI:RenderScoreboard()
     end
     local numRows = #data
     local visibleRows = #contentArea.rows
+    scrollMaxOffset = math.max(0, numRows - visibleRows)
+    if scrollOffset > scrollMaxOffset then scrollOffset = scrollMaxOffset end
     local offset = scrollOffset
     for i = 1, visibleRows do
         local row = contentArea.rows[i]
@@ -862,7 +1136,7 @@ function UI:RenderScoreboard()
             end
         else row:Hide(); row.data = nil end
     end
-    statusText:SetText(Deadpool:TableCount(Deadpool.db.scoreboard) .. " guild members ranked")
+    statusText:SetText(Deadpool:TableCount(Deadpool.demoData:GetMergedScoreboard()) .. " guild members ranked")
 end
 
 ----------------------------------------------------------------------
@@ -885,10 +1159,10 @@ function UI:RenderMyStats()
     table.insert(lines, { label = "Last Kill", value = Deadpool:TimeAgo(score.lastKill) })
     table.insert(lines, { label = "", value = "" })
     table.insert(lines, { label = Deadpool.colors.header .. "=== DEATHS ===|r", value = "" })
-    table.insert(lines, { label = "Total Deaths", value = Deadpool.colors.red .. #(Deadpool.db.deathLog or {}) .. "|r" })
+    table.insert(lines, { label = "Total Deaths", value = Deadpool.colors.red .. #(Deadpool.demoData:GetMergedDeathLog()) .. "|r" })
     local nemesis, nemesisCount = nil, 0
     local myDeaths = {}
-    for _, d in ipairs(Deadpool.db.deathLog or {}) do
+    for _, d in ipairs(Deadpool.demoData:GetMergedDeathLog()) do
         if d.victim == myName then myDeaths[d.killer] = (myDeaths[d.killer] or 0) + 1 end
     end
     for k, v in pairs(myDeaths) do if v > nemesisCount then nemesis = k; nemesisCount = v end end
@@ -897,7 +1171,7 @@ function UI:RenderMyStats()
     end
     local favTarget, favCount = nil, 0
     local myKills = {}
-    for _, k in ipairs(Deadpool.db.killLog or {}) do
+    for _, k in ipairs(Deadpool.demoData:GetMergedKillLog()) do
         if k.killer == myName then myKills[k.victim] = (myKills[k.victim] or 0) + 1 end
     end
     for k, v in pairs(myKills) do if v > favCount then favTarget = k; favCount = v end end
@@ -908,11 +1182,13 @@ function UI:RenderMyStats()
     table.insert(lines, { label = Deadpool.colors.header .. "=== GUILD ===|r", value = "" })
     table.insert(lines, { label = "KOS List Size", value = tostring(Deadpool:GetKOSCount()) })
     table.insert(lines, { label = "Active Bounties", value = tostring(#Deadpool:GetActiveBounties()) })
-    table.insert(lines, { label = "Kills Logged", value = tostring(#(Deadpool.db.killLog or {})) })
-    table.insert(lines, { label = "Enemies Tracked", value = tostring(Deadpool:TableCount(Deadpool.db.enemySheet or {})) })
+    table.insert(lines, { label = "Kills Logged", value = tostring(#(Deadpool.demoData:GetMergedKillLog())) })
+    table.insert(lines, { label = "Enemies Tracked", value = tostring(Deadpool:TableCount(Deadpool.demoData:GetMergedEnemySheet())) })
 
     local numRows = #lines
     local visibleRows = #contentArea.rows
+    scrollMaxOffset = math.max(0, numRows - visibleRows)
+    if scrollOffset > scrollMaxOffset then scrollOffset = scrollMaxOffset end
     local offset = scrollOffset
     for i = 1, visibleRows do
         local row = contentArea.rows[i]
@@ -943,6 +1219,15 @@ function UI:RenderKillLog()
         { text = "When",    x = 728, w = 130 }
     )
     local data = Deadpool:GetKillLog("all")
+    local myName = Deadpool:GetPlayerFullName()
+    -- Show Mine filter
+    if UI.showMineOnly then
+        local f = {}
+        for _, e in ipairs(data) do
+            if e.killer == myName then table.insert(f, e) end
+        end
+        data = f
+    end
     if filterText ~= "" then
         local f = {}
         for _, e in ipairs(data) do
@@ -953,6 +1238,8 @@ function UI:RenderKillLog()
     end
     local numRows = #data
     local visibleRows = #contentArea.rows
+    scrollMaxOffset = math.max(0, numRows - visibleRows)
+    if scrollOffset > scrollMaxOffset then scrollOffset = scrollMaxOffset end
     local offset = scrollOffset
     for i = 1, visibleRows do
         local row = contentArea.rows[i]
@@ -985,9 +1272,13 @@ end
 UI.settingsBuilt = false
 
 function UI:ShowSettingsPanel()
-    if not UI.settingsBuilt then
-        self:BuildSettingsPanel()
+    -- Always rebuild to pick up current GM status
+    if UI.settingsPanel then
+        UI.settingsPanel:Hide()
+        UI.settingsPanel:SetParent(nil)
+        UI.settingsPanel = nil
     end
+    self:BuildSettingsPanel()
     UI.settingsPanel:Show()
     self:UpdateSettingsValues()
 end
@@ -997,12 +1288,62 @@ function UI:BuildSettingsPanel()
     local TM = Deadpool.modules.Theme
     local t = TM.active
 
+    -- Outer container (clips content)
     UI.settingsPanel = CreateFrame("Frame", nil, mainFrame)
     UI.settingsPanel:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 20, -82)
     UI.settingsPanel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -20, 30)
     UI.settingsPanel:Hide()
 
-    local content = UI.settingsPanel
+    -- ScrollFrame for settings content
+    local scrollFrame = CreateFrame("ScrollFrame", nil, UI.settingsPanel)
+    scrollFrame:SetPoint("TOPLEFT", 0, 0)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -12, 0)  -- leave room for scrollbar
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local current = self:GetVerticalScroll()
+        local maxScroll = math.max(0, (self:GetScrollChild():GetHeight() or 0) - self:GetHeight())
+        local newScroll = math.max(0, math.min(maxScroll, current - (delta * 30)))
+        self:SetVerticalScroll(newScroll)
+        if UI.settingsPanel._scrollBar then
+            UI.settingsPanel._scrollBar:SetValue(newScroll)
+        end
+    end)
+    UI.settingsPanel._scrollFrame = scrollFrame
+
+    -- Scroll bar
+    local scrollBar = CreateFrame("Slider", nil, UI.settingsPanel, "BackdropTemplate")
+    scrollBar:SetWidth(8)
+    scrollBar:SetPoint("TOPRIGHT", UI.settingsPanel, "TOPRIGHT", 0, -2)
+    scrollBar:SetPoint("BOTTOMRIGHT", UI.settingsPanel, "BOTTOMRIGHT", 0, 2)
+    scrollBar:SetOrientation("VERTICAL")
+    scrollBar:SetMinMaxValues(0, 1)
+    scrollBar:SetValue(0)
+    scrollBar:SetValueStep(1)
+    scrollBar:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8x8"})
+    scrollBar:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.3)
+    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
+    thumb:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.5)
+    thumb:SetSize(8, 40)
+    scrollBar:SetThumbTexture(thumb)
+    scrollBar:SetScript("OnValueChanged", function(self, value)
+        scrollFrame:SetVerticalScroll(value)
+    end)
+    scrollBar:EnableMouseWheel(true)
+    scrollBar:SetScript("OnMouseWheel", function(self, delta)
+        local current = scrollFrame:GetVerticalScroll()
+        local maxScroll = math.max(0, (scrollFrame:GetScrollChild():GetHeight() or 0) - scrollFrame:GetHeight())
+        local newScroll = math.max(0, math.min(maxScroll, current - (delta * 30)))
+        scrollFrame:SetVerticalScroll(newScroll)
+        self:SetValue(newScroll)
+    end)
+    UI.settingsPanel._scrollBar = scrollBar
+
+    -- Scrollable content child
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetWidth((UI.settingsPanel:GetWidth() or 900) - 14)
+    content:SetHeight(800)  -- will be resized at the end
+    scrollFrame:SetScrollChild(content)
+
     UI.settingsPanel._checkboxes = {}
     UI.settingsPanel._infoValues = {}
 
@@ -1089,38 +1430,213 @@ function UI:BuildSettingsPanel()
     local ddTxt = _G[ddName.."Text"]; if ddTxt then ddTxt:SetTextColor(t.tabTextActive[1], t.tabTextActive[2], t.tabTextActive[3]) end
     ly = ly - 36
 
-    -- UI SCALE
+    -- UI SCALE (opens popup so slider doesn't fight with the scaling frame)
     Header("UI SCALE", 0, ly); ly = ly - 24
-    local slider = CreateFrame("Slider", nil, content, "OptionsSliderTemplate")
-    slider:SetPoint("TOPLEFT", content, "TOPLEFT", 10, ly - 4)
-    slider:SetSize(220, 16)
-    slider:SetMinMaxValues(0.7, 1.3)
-    slider:SetValueStep(0.05)
-    slider:SetObeyStepOnDrag(true)
-    slider:SetValue(Deadpool.db.settings.uiScale or 1.0)
-    slider.Low:SetText("70%")
-    slider.High:SetText("130%")
-    local scaleLabel = content:CreateFontString(nil, "OVERLAY")
-    scaleLabel:SetFont(TM:GetFont(12, ""))
-    scaleLabel:SetPoint("LEFT", slider, "RIGHT", 14, 0)
-    scaleLabel:SetTextColor(t.text[1], t.text[2], t.text[3])
-    scaleLabel:SetText(tostring(math.floor((Deadpool.db.settings.uiScale or 1.0) * 100)) .. "%")
-    UI.settingsPanel._scaleLabel = scaleLabel
-    slider:SetScript("OnValueChanged", function(self, value)
-        value = math.floor(value * 20 + 0.5) / 20
-        Deadpool.db.settings.uiScale = value
-        if mainFrame then mainFrame:SetScale(value) end
-        scaleLabel:SetText(tostring(math.floor(value * 100)) .. "%")
-    end)
-    UI.settingsPanel._scaleSlider = slider
-    ly = ly - 40
+    local scaleBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    scaleBtn:SetSize(220, 22)
+    scaleBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 10, ly)
+    scaleBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 1,
+    })
+    scaleBtn:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
+    scaleBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+    scaleBtn._label = scaleBtn:CreateFontString(nil, "OVERLAY")
+    scaleBtn._label:SetFont(TM:GetFont(11, ""))
+    scaleBtn._label:SetPoint("CENTER")
+    scaleBtn._label:SetText("Scale: " .. math.floor((Deadpool.db.settings.uiScale or 1.0) * 100) .. "%  (click to adjust)")
+    scaleBtn._label:SetTextColor(t.text[1], t.text[2], t.text[3])
+    scaleBtn:SetScript("OnClick", function() UI:ShowScalePopup() end)
+    UI.settingsPanel._scaleBtn = scaleBtn
+    ly = ly - 30
 
     -- NOTIFICATIONS
     Header("NOTIFICATIONS", 0, ly); ly = ly - 24
     Check("Announce kills in chat", "announceKills", 0, ly); ly = ly - 26
     Check("KOS sighting alerts", "announceKOSSighted", 0, ly); ly = ly - 26
     Check("Alert sound on KOS spotted", "alertSound", 0, ly); ly = ly - 26
-    Check("Broadcast sightings to guild", "broadcastSightings", 0, ly); ly = ly - 26
+    Check("Broadcast sightings to guild", "broadcastSightings", 0, ly); ly = ly - 34
+
+    -- ALERTS
+    Header("ALERT FRAME", 0, ly); ly = ly - 24
+    Check("Show on-screen alerts", "showAlertFrame", 0, ly); ly = ly - 26
+
+    -- Position alert button (toggle unlock/lock)
+    local alertPosBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    alertPosBtn:SetSize(150, 20)
+    alertPosBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 10, ly)
+    alertPosBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+    alertPosBtn:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+    alertPosBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+    local alertPosLbl = alertPosBtn:CreateFontString(nil, "OVERLAY")
+    alertPosLbl:SetFont(TM:GetFont(10, "")); alertPosLbl:SetPoint("CENTER")
+    alertPosLbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+
+    local alertsMod = Deadpool.modules.Alerts
+    local isUnlocked = alertsMod and alertsMod._unlocked
+    alertPosLbl:SetText(isUnlocked and "Lock Position" or "Unlock Position")
+    alertPosBtn:SetScript("OnClick", function()
+        if not alertsMod then return end
+        if alertsMod._unlocked then
+            alertsMod:LockPosition()
+            alertsMod._unlocked = false
+            alertPosLbl:SetText("Unlock Position")
+        else
+            alertsMod:UnlockPosition()
+            alertsMod._unlocked = true
+            alertPosLbl:SetText("Lock Position")
+        end
+    end)
+    ly = ly - 34
+
+    -- KILL SOUNDS
+    Header("KILL SOUNDS", 0, ly); ly = ly - 24
+    Check("Play sound on killing blow", "killSoundEnabled", 0, ly); ly = ly - 26
+    Check("Streak announcer sounds", "streakSoundsEnabled", 0, ly); ly = ly - 28
+
+    -- Sound rows: clean table layout (label | dropdown | play button)
+    local ddCounter = 0
+    local COL_LABEL = 10     -- label starts here
+    local COL_DD    = 110    -- dropdown starts here
+    local COL_PLAY  = 290    -- play button starts here
+    local DD_W      = 170    -- dropdown width
+
+    local function SoundRow(label, settingsKey, y)
+        ddCounter = ddCounter + 1
+
+        -- Label column
+        local lbl = content:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(11, ""))
+        lbl:SetPoint("TOPLEFT", content, "TOPLEFT", COL_LABEL, y)
+        lbl:SetText(label)
+        lbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+
+        -- Value button (acts as dropdown trigger)
+        local valBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        valBtn:SetSize(DD_W, 20)
+        valBtn:SetPoint("TOPLEFT", content, "TOPLEFT", COL_DD, y + 2)
+        valBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        valBtn:SetBackdropColor(t.bgAlt[1], t.bgAlt[2], t.bgAlt[3], t.bgAlt[4] or 0.8)
+        valBtn:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], t.border[4] or 0.5)
+
+        local valText = valBtn:CreateFontString(nil, "OVERLAY")
+        valText:SetFont(TM:GetFont(11, ""))
+        valText:SetPoint("LEFT", 8, 0)
+        valText:SetText(Deadpool:GetKillSoundName(Deadpool.db.settings[settingsKey] or "none"))
+        valText:SetTextColor(t.tabTextActive[1], t.tabTextActive[2], t.tabTextActive[3])
+
+        local arrow = valBtn:CreateFontString(nil, "OVERLAY")
+        arrow:SetFont(TM:GetFont(10, ""))
+        arrow:SetPoint("RIGHT", -6, 0)
+        arrow:SetText("v")
+        arrow:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+
+        -- Dropdown menu (hidden, shown on click)
+        local ddName = "DeadpoolSoundDD" .. ddCounter
+        if _G[ddName] then _G[ddName]:Hide(); _G[ddName]:SetParent(nil) end
+        local ddMenu = CreateFrame("Frame", ddName, UIParent, "UIDropDownMenuTemplate")
+        UIDropDownMenu_Initialize(ddMenu, function(self, level)
+            for _, key in ipairs(Deadpool:GetKillSoundOptions()) do
+                local info = UIDropDownMenu_CreateInfo()
+                info.text = Deadpool:GetKillSoundName(key)
+                info.value = key
+                info.checked = (Deadpool.db.settings[settingsKey] == key)
+                info.func = function(btn)
+                    Deadpool.db.settings[settingsKey] = btn.value
+                    valText:SetText(Deadpool:GetKillSoundName(btn.value))
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+        end, "MENU")
+
+        valBtn:SetScript("OnClick", function(self)
+            ToggleDropDownMenu(1, nil, ddMenu, self, 0, 0)
+        end)
+        valBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.8)
+        end)
+        valBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], t.border[4] or 0.5)
+        end)
+
+        -- Play button column
+        local playBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        playBtn:SetSize(22, 20)
+        playBtn:SetPoint("TOPLEFT", content, "TOPLEFT", COL_PLAY, y + 2)
+        playBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        playBtn:SetBackdropColor(t.accent[1]*0.2, t.accent[2]*0.2, t.accent[3]*0.2, 0.8)
+        playBtn:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.5)
+        local playIcon = playBtn:CreateFontString(nil, "OVERLAY")
+        playIcon:SetFont(TM:GetFont(12, "OUTLINE"))
+        playIcon:SetPoint("CENTER", 1, 0)
+        playIcon:SetText("|cFFFFFFFF>|r")
+        playBtn:SetScript("OnClick", function()
+            Deadpool:PlaySoundByKey(Deadpool.db.settings[settingsKey])
+        end)
+        playBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(t.accent[1]*0.4, t.accent[2]*0.4, t.accent[3]*0.4, 1)
+            self:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 1)
+        end)
+        playBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(t.accent[1]*0.2, t.accent[2]*0.2, t.accent[3]*0.2, 0.8)
+            self:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.5)
+        end)
+    end
+
+    SoundRow("Kill Sound", "killSound", ly); ly = ly - 26
+    SoundRow("Death", "deathSound", ly); ly = ly - 26
+    SoundRow("Party Death", "partyDeathSound", ly); ly = ly - 26
+    SoundRow("Party Attack", "partyAttackSound", ly); ly = ly - 26
+    SoundRow("KOS Alert", "kosAlertSound", ly); ly = ly - 30
+
+    -- Custom sound: add from Sounds folder
+    local csHeader = content:CreateFontString(nil, "OVERLAY")
+    csHeader:SetFont(TM:GetFont(10, ""))
+    csHeader:SetPoint("TOPLEFT", content, "TOPLEFT", 10, ly)
+    csHeader:SetText("Add custom: drop file in Deadpool/Sounds/ then type filename below")
+    csHeader:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+    ly = ly - 18
+
+    local csEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+    csEdit:SetSize(200, 18)
+    csEdit:SetPoint("TOPLEFT", content, "TOPLEFT", 10, ly)
+    csEdit:SetAutoFocus(false)
+    csEdit:SetMaxLetters(64)
+
+    local csAddBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+    csAddBtn:SetSize(60, 18)
+    csAddBtn:SetPoint("LEFT", csEdit, "RIGHT", 6, 0)
+    csAddBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+    csAddBtn:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+    csAddBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+    local csAddLbl = csAddBtn:CreateFontString(nil, "OVERLAY")
+    csAddLbl:SetFont(TM:GetFont(10, "")); csAddLbl:SetPoint("CENTER"); csAddLbl:SetText("Add")
+    csAddLbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+    csAddBtn:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(t.accent[1]*0.5, t.accent[2]*0.5, t.accent[3]*0.5, 1)
+    end)
+    csAddBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+    end)
+    csAddBtn:SetScript("OnClick", function()
+        local filename = csEdit:GetText()
+        if filename and filename ~= "" then
+            filename = filename:match("([^\\]+)$") or filename
+            local displayName = filename:match("(.+)%..+$") or filename
+            local key = Deadpool:AddCustomSound(displayName, filename)
+            Deadpool.db.settings.killSound = key
+            csEdit:SetText("")
+            Deadpool:Print(Deadpool.colors.green .. "Custom sound added:|r " .. displayName)
+            Deadpool:PreviewKillSound(key)
+            UI:ShowSettingsPanel()
+        end
+    end)
+    ly = ly - 26
+
+    -- DEMO DATA
+    Header("DEMO DATA", 0, ly); ly = ly - 24
+    Check("Show demo data (sample entries)", "showDemoData", 0, ly); ly = ly - 26
 
     -- ========================
     -- RIGHT COLUMN
@@ -1129,22 +1645,262 @@ function UI:BuildSettingsPanel()
 
     -- AUTO-KOS
     Header("AUTO-KOS", COL2, ry); ry = ry - 24
-    Check("Auto-add attackers to KOS", "autoKOSOnAttack", COL2, ry); ry = ry - 34
+    Check("Auto-KOS players who kill you", "autoKOSOnAttack", COL2, ry); ry = ry - 34
 
-    -- POINTS
-    Header("POINTS", COL2, ry); ry = ry - 24
-    Info("Random PvP kill: ", "pointsPerKill", COL2, ry); ry = ry - 22
-    Info("KOS kill: ", "pointsPerKOSKill", COL2, ry); ry = ry - 22
-    Info("Bounty kill: ", "pointsPerBountyKill", COL2, ry); ry = ry - 34
+    -- GUILD CONFIG (GM/Manager-managed point values)
+    local isGM = Deadpool:IsGM()
+    local isManager = Deadpool:IsManager()
+    local gc = Deadpool.db.guildConfig
+    local configLabel = isGM and "GUILD CONFIG (GM)" or (isManager and "GUILD CONFIG (Manager)" or "GUILD CONFIG")
+    Header(configLabel, COL2, ry); ry = ry - 24
+
+    -- Helper: editable number field for managers, read-only for others
+    local function ConfigField(label, configKey, x, y)
+        local lbl = content:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(12, ""))
+        lbl:SetPoint("TOPLEFT", content, "TOPLEFT", x + 8, y)
+        lbl:SetText(label)
+        lbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+
+        if isManager then
+            local editBox = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+            editBox:SetSize(50, 18)
+            editBox:SetPoint("LEFT", lbl, "RIGHT", 8, 0)
+            editBox:SetAutoFocus(false)
+            editBox:SetMaxLetters(6)
+            editBox:SetText(tostring(gc[configKey] or 0))
+            editBox:SetScript("OnEnterPressed", function(self)
+                local val = tonumber(self:GetText())
+                if val then
+                    Deadpool.db.guildConfig[configKey] = val
+                end
+                self:ClearFocus()
+            end)
+            editBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+            if not UI.settingsPanel._configEdits then UI.settingsPanel._configEdits = {} end
+            UI.settingsPanel._configEdits[configKey] = editBox
+        else
+            local val = content:CreateFontString(nil, "OVERLAY")
+            val:SetFont(TM:GetFont(12, ""))
+            val:SetPoint("LEFT", lbl, "RIGHT", 8, 0)
+            val:SetText(Deadpool.colors.yellow .. tostring(gc[configKey] or 0) .. "|r")
+            val:SetTextColor(t.text[1], t.text[2], t.text[3])
+        end
+    end
+
+    ConfigField("PvP Kill:", "pointsPerKill", COL2, ry); ry = ry - 22
+    ConfigField("KOS Kill:", "pointsPerKOSKill", COL2, ry); ry = ry - 22
+    ConfigField("Bounty Kill:", "pointsPerBountyKill", COL2, ry); ry = ry - 22
+    ConfigField("Underdog 3-5 (x):", "pointsUnderdogMultiplier3", COL2, ry); ry = ry - 22
+    ConfigField("Underdog 6+ (x):", "pointsUnderdogMultiplier6", COL2, ry); ry = ry - 22
+    ConfigField("Full Pts Range:", "pointsLowbieRange", COL2, ry); ry = ry - 22
+    ConfigField("Low Reduction:", "pointsLowbieReduction", COL2, ry); ry = ry - 22
+    ConfigField("Floor Tier (lvls):", "pointsLowbieTier2", COL2, ry); ry = ry - 22
+    ConfigField("Floor Pts:", "pointsLowbieFloor", COL2, ry); ry = ry - 26
+
+    -- Manager/GM: Push Config button
+    if isManager then
+        local pushBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        pushBtn:SetSize(140, 22)
+        pushBtn:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        pushBtn:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8",
+            edgeSize = 1,
+        })
+        pushBtn:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
+        pushBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+        local btnLabel = pushBtn:CreateFontString(nil, "OVERLAY")
+        btnLabel:SetFont(TM:GetFont(11, ""))
+        btnLabel:SetPoint("CENTER")
+        btnLabel:SetText(Deadpool.colors.gold .. "Push to Guild|r")
+        pushBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(t.accent[1] * 0.5, t.accent[2] * 0.5, t.accent[3] * 0.5, 1)
+        end)
+        pushBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
+        end)
+        pushBtn:SetScript("OnClick", function()
+            -- Read values from edit boxes
+            if UI.settingsPanel._configEdits then
+                for key, editBox in pairs(UI.settingsPanel._configEdits) do
+                    local val = tonumber(editBox:GetText())
+                    if val then Deadpool.db.guildConfig[key] = val end
+                end
+            end
+            Deadpool:BroadcastGMConfig()
+        end)
+        ry = ry - 28
+    end
+
+    -- Show who last updated config
+    if gc.updatedBy and gc.updatedBy ~= "" then
+        local infoLbl = content:CreateFontString(nil, "OVERLAY")
+        infoLbl:SetFont(TM:GetFont(10, ""))
+        infoLbl:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        infoLbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+        infoLbl:SetText("Last updated by " .. Deadpool:ShortName(gc.updatedBy) .. " " .. Deadpool:TimeAgo(gc.updatedAt))
+    end
+    ry = ry - 26
 
     -- SYNC
     Header("SYNC", COL2, ry); ry = ry - 24
-    Check("Guild sync enabled", "syncEnabled", COL2, ry); ry = ry - 26
-    Info("Sync version: ", "syncVersion", COL2, ry); ry = ry - 34
+    Check("Guild sync enabled", "syncEnabled", COL2, ry); ry = ry - 34
+
+    -- MANAGERS (GM-only: delegate access)
+    if isGM then
+        Header("MANAGERS", COL2, ry); ry = ry - 24
+        local managers = gc.managers or {}
+        local mgrNames = {}
+        for n in pairs(managers) do mgrNames[#mgrNames + 1] = Deadpool:ShortName(n) end
+        local mgrText = #mgrNames > 0 and table.concat(mgrNames, ", ") or Deadpool.colors.grey .. "None assigned|r"
+        local mgrLbl = content:CreateFontString(nil, "OVERLAY")
+        mgrLbl:SetFont(TM:GetFont(11, ""))
+        mgrLbl:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        mgrLbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        mgrLbl:SetText(mgrText)
+        ry = ry - 20
+
+        -- Add manager edit box
+        local mgrEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+        mgrEdit:SetSize(130, 18)
+        mgrEdit:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        mgrEdit:SetAutoFocus(false)
+        mgrEdit:SetMaxLetters(32)
+
+        local addMgrBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        addMgrBtn:SetSize(30, 18)
+        addMgrBtn:SetPoint("LEFT", mgrEdit, "RIGHT", 4, 0)
+        addMgrBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        addMgrBtn:SetBackdropColor(0.1, 0.5, 0.1, 0.9)
+        addMgrBtn:SetBackdropBorderColor(0.2, 0.7, 0.2, 0.6)
+        local addLbl = addMgrBtn:CreateFontString(nil, "OVERLAY")
+        addLbl:SetFont(TM:GetFont(10, "OUTLINE")); addLbl:SetPoint("CENTER"); addLbl:SetText("+")
+        addMgrBtn:SetScript("OnClick", function()
+            local name = mgrEdit:GetText()
+            if name and name ~= "" then
+                local fullName = Deadpool:NormalizeName(name)
+                if fullName then
+                    if not Deadpool.db.guildConfig.managers then Deadpool.db.guildConfig.managers = {} end
+                    Deadpool.db.guildConfig.managers[fullName] = true
+                    Deadpool:Print(Deadpool.colors.green .. Deadpool:ShortName(fullName) .. " added as manager.|r")
+                    mgrEdit:SetText("")
+                    UI:ShowSettingsPanel()  -- rebuild to reflect
+                end
+            end
+        end)
+
+        local remMgrBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        remMgrBtn:SetSize(30, 18)
+        remMgrBtn:SetPoint("LEFT", addMgrBtn, "RIGHT", 4, 0)
+        remMgrBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        remMgrBtn:SetBackdropColor(0.5, 0.1, 0.1, 0.9)
+        remMgrBtn:SetBackdropBorderColor(0.7, 0.2, 0.2, 0.6)
+        local remLbl = remMgrBtn:CreateFontString(nil, "OVERLAY")
+        remLbl:SetFont(TM:GetFont(10, "OUTLINE")); remLbl:SetPoint("CENTER"); remLbl:SetText("-")
+        remMgrBtn:SetScript("OnClick", function()
+            local name = mgrEdit:GetText()
+            if name and name ~= "" then
+                local fullName = Deadpool:NormalizeName(name)
+                if fullName and Deadpool.db.guildConfig.managers then
+                    Deadpool.db.guildConfig.managers[fullName] = nil
+                    Deadpool:Print(Deadpool.colors.red .. Deadpool:ShortName(fullName) .. " removed as manager.|r")
+                    mgrEdit:SetText("")
+                    UI:ShowSettingsPanel()
+                end
+            end
+        end)
+        ry = ry - 30
+    end
+
+    -- WAR GUILDS (Manager: declare war on enemy guilds)
+    if isManager then
+        Header("GUILD WARS", COL2, ry); ry = ry - 24
+        local wars = gc.warGuilds or {}
+        local warNames = {}
+        for g in pairs(wars) do warNames[#warNames + 1] = g end
+        local warText = #warNames > 0 and Deadpool.colors.red .. table.concat(warNames, ", ") .. "|r" or Deadpool.colors.grey .. "None declared|r"
+        local warLbl = content:CreateFontString(nil, "OVERLAY")
+        warLbl:SetFont(TM:GetFont(11, ""))
+        warLbl:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        warLbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        warLbl:SetText(warText)
+        ry = ry - 20
+
+        local warEdit = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+        warEdit:SetSize(130, 18)
+        warEdit:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        warEdit:SetAutoFocus(false)
+        warEdit:SetMaxLetters(48)
+
+        local addWarBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        addWarBtn:SetSize(30, 18)
+        addWarBtn:SetPoint("LEFT", warEdit, "RIGHT", 4, 0)
+        addWarBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        addWarBtn:SetBackdropColor(0.5, 0.1, 0.1, 0.9)
+        addWarBtn:SetBackdropBorderColor(0.7, 0.2, 0.2, 0.6)
+        local addWarLbl = addWarBtn:CreateFontString(nil, "OVERLAY")
+        addWarLbl:SetFont(TM:GetFont(10, "OUTLINE")); addWarLbl:SetPoint("CENTER"); addWarLbl:SetText("+")
+        addWarBtn:SetScript("OnClick", function()
+            local guildName = warEdit:GetText()
+            if guildName and guildName ~= "" then
+                if not Deadpool.db.guildConfig.warGuilds then Deadpool.db.guildConfig.warGuilds = {} end
+                Deadpool.db.guildConfig.warGuilds[guildName] = true
+                Deadpool:Print(Deadpool.colors.red .. "WAR DECLARED|r against <" .. guildName .. ">!")
+                warEdit:SetText("")
+                Deadpool:BroadcastGMConfig()
+                UI:ShowSettingsPanel()
+            end
+        end)
+
+        local remWarBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        remWarBtn:SetSize(30, 18)
+        remWarBtn:SetPoint("LEFT", addWarBtn, "RIGHT", 4, 0)
+        remWarBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        remWarBtn:SetBackdropColor(0.1, 0.4, 0.1, 0.9)
+        remWarBtn:SetBackdropBorderColor(0.2, 0.6, 0.2, 0.6)
+        local remWarLbl = remWarBtn:CreateFontString(nil, "OVERLAY")
+        remWarLbl:SetFont(TM:GetFont(10, "OUTLINE")); remWarLbl:SetPoint("CENTER"); remWarLbl:SetText("-")
+        remWarBtn:SetScript("OnClick", function()
+            local guildName = warEdit:GetText()
+            if guildName and guildName ~= "" and Deadpool.db.guildConfig.warGuilds then
+                Deadpool.db.guildConfig.warGuilds[guildName] = nil
+                Deadpool:Print(Deadpool.colors.green .. "Peace declared|r with <" .. guildName .. ">.")
+                warEdit:SetText("")
+                Deadpool:BroadcastGMConfig()
+                UI:ShowSettingsPanel()
+            end
+        end)
+        ry = ry - 30
+    elseif next(gc.warGuilds or {}) then
+        Header("GUILD WARS", COL2, ry); ry = ry - 24
+        local warNames = {}
+        for g in pairs(gc.warGuilds or {}) do warNames[#warNames + 1] = g end
+        local warLbl = content:CreateFontString(nil, "OVERLAY")
+        warLbl:SetFont(TM:GetFont(11, ""))
+        warLbl:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        warLbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        warLbl:SetText(Deadpool.colors.red .. table.concat(warNames, ", ") .. "|r")
+        ry = ry - 26
+    end
 
     -- DEBUG
     Header("DEBUG", COL2, ry); ry = ry - 24
     Check("Debug mode", "debug", COL2, ry)
+
+    -- Set scroll content height based on deepest column
+    local maxDepth = math.max(math.abs(ly), math.abs(ry)) + 40
+    content:SetHeight(maxDepth)
+
+    -- Update scrollbar range after content is built
+    C_Timer.After(0.05, function()
+        if UI.settingsPanel and UI.settingsPanel._scrollFrame and UI.settingsPanel._scrollBar then
+            local frameH = UI.settingsPanel._scrollFrame:GetHeight() or 0
+            local maxScroll = math.max(0, maxDepth - frameH)
+            UI.settingsPanel._scrollBar:SetMinMaxValues(0, maxScroll)
+            UI.settingsPanel._scrollBar:SetValue(0)
+        end
+    end)
 end
 
 function UI:UpdateSettingsValues()
@@ -1156,19 +1912,98 @@ function UI:UpdateSettingsValues()
         cb:SetChecked(s[key] and true or false)
     end
 
-    -- Update info values
-    local iv = UI.settingsPanel._infoValues
-    if iv.pointsPerKill then iv.pointsPerKill:SetText(Deadpool.colors.yellow .. s.pointsPerKill .. "|r") end
-    if iv.pointsPerKOSKill then iv.pointsPerKOSKill:SetText(Deadpool.colors.yellow .. s.pointsPerKOSKill .. "|r") end
-    if iv.pointsPerBountyKill then iv.pointsPerBountyKill:SetText(Deadpool.colors.yellow .. s.pointsPerBountyKill .. "|r") end
-    if iv.syncVersion then iv.syncVersion:SetText(tostring(Deadpool.db.syncVersion or 0)) end
+    -- Update GM config edit boxes (if GM)
+    if UI.settingsPanel._configEdits then
+        local gc = Deadpool.db.guildConfig
+        for key, editBox in pairs(UI.settingsPanel._configEdits) do
+            editBox:SetText(tostring(gc[key] or 0))
+        end
+    end
 
     -- Update theme dropdown text
     if UI.settingsPanel._themeDD then
         UIDropDownMenu_SetText(UI.settingsPanel._themeDD, Deadpool.modules.Theme:GetThemeName())
     end
 
-    statusText:SetText("Settings | " .. Deadpool.modules.Theme:GetThemeName())
+    local isGM = Deadpool:IsGM()
+    local isMgr = Deadpool:IsManager()
+    local roleTag = isGM and (" | " .. Deadpool.colors.gold .. "GM|r") or (isMgr and (" | " .. Deadpool.colors.cyan .. "Manager|r") or "")
+    statusText:SetText("Settings | " .. Deadpool.modules.Theme:GetThemeName() .. roleTag)
+end
+
+----------------------------------------------------------------------
+-- Scale popup (separate window so the slider doesn't fight the scaling)
+----------------------------------------------------------------------
+function UI:ShowScalePopup()
+    if UI._scalePopup then
+        UI._scalePopup:Show()
+        return
+    end
+
+    local TM = Deadpool.modules.Theme
+    local t = TM.active
+
+    local popup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    popup:SetSize(300, 100)
+    popup:SetPoint("CENTER", UIParent, "CENTER", 0, 100)
+    popup:SetFrameStrata("DIALOG")
+    popup:SetMovable(true)
+    popup:EnableMouse(true)
+    popup:RegisterForDrag("LeftButton")
+    popup:SetScript("OnDragStart", popup.StartMoving)
+    popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
+    popup:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 2,
+    })
+    popup:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.95)
+    popup:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.8)
+
+    local title = popup:CreateFontString(nil, "OVERLAY")
+    title:SetFont(TM:GetFont(13, "OUTLINE"))
+    title:SetPoint("TOP", 0, -10)
+    title:SetText(TM:AccentHex() .. "UI Scale|r")
+
+    local slider = CreateFrame("Slider", nil, popup, "OptionsSliderTemplate")
+    slider:SetPoint("CENTER", 0, -5)
+    slider:SetSize(220, 16)
+    slider:SetMinMaxValues(0.7, 1.3)
+    slider:SetValueStep(0.05)
+    slider:SetObeyStepOnDrag(true)
+    slider:SetValue(Deadpool.db.settings.uiScale or 1.0)
+    slider.Low:SetText("70%")
+    slider.High:SetText("130%")
+
+    local valueText = popup:CreateFontString(nil, "OVERLAY")
+    valueText:SetFont(TM:GetFont(14, "OUTLINE"))
+    valueText:SetPoint("TOP", slider, "BOTTOM", 0, -8)
+    valueText:SetText(math.floor((Deadpool.db.settings.uiScale or 1.0) * 100) .. "%")
+    valueText:SetTextColor(t.text[1], t.text[2], t.text[3])
+
+    slider:SetScript("OnValueChanged", function(self, value)
+        value = math.floor(value * 20 + 0.5) / 20
+        Deadpool.db.settings.uiScale = value
+        if mainFrame then mainFrame:SetScale(value) end
+        valueText:SetText(math.floor(value * 100) .. "%")
+        -- Update the settings button label if it exists
+        if UI.settingsPanel and UI.settingsPanel._scaleBtn then
+            UI.settingsPanel._scaleBtn._label:SetText("Scale: " .. math.floor(value * 100) .. "%  (click to adjust)")
+        end
+    end)
+
+    -- Close button
+    local closeBtn = CreateFrame("Button", nil, popup)
+    closeBtn:SetSize(20, 20)
+    closeBtn:SetPoint("TOPRIGHT", -4, -4)
+    local xText = closeBtn:CreateFontString(nil, "OVERLAY")
+    xText:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE")
+    xText:SetPoint("CENTER")
+    xText:SetText("X")
+    xText:SetTextColor(0.8, 0.2, 0.2)
+    closeBtn:SetScript("OnClick", function() popup:Hide() end)
+
+    UI._scalePopup = popup
 end
 
 ----------------------------------------------------------------------
@@ -1191,7 +2026,7 @@ function UI:ApplyFrameTheme()
 
     -- Title bar
     if mainFrame.titleBarBg then
-        mainFrame.titleBarBg:SetColorTexture(t.accent[1] * 0.5, t.accent[2] * 0.5, t.accent[3] * 0.5, 0.95)
+        mainFrame.titleBarBg:SetColorTexture(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.95)
     end
     if mainFrame.titleText then
         mainFrame.titleText:SetText(Deadpool.modules.Theme:AccentHex() .. "DEADPOOL|r")
@@ -1211,6 +2046,29 @@ function UI:ApplyFrameTheme()
     if dashboardFrame then
         self:ThemeDashboard()
     end
+
+    -- Bottom bar
+    if mainFrame.bottomBar then
+        mainFrame.bottomBar:SetBackdropColor(t.headerBg[1], t.headerBg[2], t.headerBg[3], 0.95)
+    end
+
+    -- Scroll bar
+    if contentArea and contentArea.scrollBar then
+        contentArea.scrollBar:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.5)
+        contentArea.scrollBar:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.3)
+        local thumb = contentArea.scrollBar:GetThumbTexture()
+        if thumb then thumb:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.6) end
+    end
+
+    -- Themed buttons
+    local function ReThemeBtn(btn)
+        if not btn then return end
+        btn:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
+        btn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+        if btn._label then btn._label:SetTextColor(t.text[1], t.text[2], t.text[3]) end
+    end
+    ReThemeBtn(mainFrame.addBtn)
+    ReThemeBtn(mainFrame.syncBtn)
 end
 
 ----------------------------------------------------------------------
@@ -1422,7 +2280,7 @@ function UI:RenderDashboard()
 
     -- Stat cards
     local totalGuildKills = 0
-    for _, sc in pairs(Deadpool.db.scoreboard) do
+    for _, sc in pairs(Deadpool.demoData:GetMergedScoreboard()) do
         totalGuildKills = totalGuildKills + (sc.totalKills or 0)
     end
     dashboardFrame.cards.kills.value:SetText(accentHex .. totalGuildKills .. "|r")
@@ -1445,9 +2303,9 @@ function UI:RenderDashboard()
     local rank = Deadpool:GetPlayerRank(myName)
     dashboardFrame.cards.rank.value:SetText(Deadpool.colors.gold .. "#" .. rank .. "|r")
     dashboardFrame.cards.rank.title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
-    dashboardFrame.cards.rank.subtitle:SetText("of " .. Deadpool:TableCount(Deadpool.db.scoreboard))
+    dashboardFrame.cards.rank.subtitle:SetText("of " .. Deadpool:TableCount(Deadpool.demoData:GetMergedScoreboard()))
 
-    dashboardFrame.cards.enemies.value:SetText(Deadpool.colors.red .. Deadpool:TableCount(Deadpool.db.enemySheet) .. "|r")
+    dashboardFrame.cards.enemies.value:SetText(Deadpool.colors.red .. Deadpool:TableCount(Deadpool.demoData:GetMergedEnemySheet()) .. "|r")
     dashboardFrame.cards.enemies.title:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
     dashboardFrame.cards.enemies.subtitle:SetText("tracked")
 
@@ -1494,11 +2352,12 @@ function UI:RenderDashboard()
             local k = recentKills[i]
             local killer = Deadpool:ShortName(k.killer)
             local victim = k.victimClass and Deadpool:ClassColor(k.victimClass, Deadpool:ShortName(k.victim)) or Deadpool:ShortName(k.victim)
+            local lvlStr = k.victimLevel and k.victimLevel > 0 and (Deadpool.colors.grey .. " [" .. k.victimLevel .. "]|r") or ""
             local typeTag = ""
             if k.isBounty then typeTag = Deadpool.colors.gold .. " [BOUNTY]|r"
             elseif k.isKOS then typeTag = Deadpool.colors.red .. " [KOS]|r" end
             local timeStr = Deadpool.colors.grey .. Deadpool:TimeAgo(k.time) .. "|r"
-            line:SetText(timeStr .. "  " .. Deadpool.colors.green .. killer .. "|r killed " .. victim .. typeTag .. " in " .. Deadpool.colors.yellow .. (k.zone or "?") .. "|r")
+            line:SetText(timeStr .. "  " .. Deadpool.colors.green .. killer .. "|r killed " .. victim .. lvlStr .. typeTag .. " in " .. Deadpool.colors.yellow .. (k.zone or "?") .. "|r")
             line:Show()
         else
             line:SetText("")
@@ -1508,7 +2367,7 @@ function UI:RenderDashboard()
     -- Session stats
     local nemesis, nemesisCount = nil, 0
     local myDeaths = {}
-    for _, d in ipairs(Deadpool.db.deathLog or {}) do
+    for _, d in ipairs(Deadpool.demoData:GetMergedDeathLog()) do
         if d.victim == myName then
             myDeaths[d.killer] = (myDeaths[d.killer] or 0) + 1
         end
@@ -1520,7 +2379,7 @@ function UI:RenderDashboard()
     dashboardFrame.sessionLines[1]:SetText(
         "Kills: " .. accentHex .. (score.totalKills or 0) .. "|r" ..
         "     Streak: " .. Deadpool.colors.orange .. (score.bestStreak or 0) .. "|r" ..
-        "     Deaths: " .. Deadpool.colors.red .. #(Deadpool.db.deathLog or {}) .. "|r")
+        "     Deaths: " .. Deadpool.colors.red .. #(Deadpool.demoData:GetMergedDeathLog()) .. "|r")
     dashboardFrame.sessionLines[2]:SetText(
         "Nemesis: " .. (nemesis and (Deadpool.colors.red .. Deadpool:ShortName(nemesis) .. " (" .. nemesisCount .. "x)|r") or Deadpool.colors.grey .. "none|r"))
     dashboardFrame.sessionLines[3]:SetText(

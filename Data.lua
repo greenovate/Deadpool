@@ -12,21 +12,48 @@ local DEFAULTS = {
     scoreboard = {},    -- ["Name-Realm"] = { guild member score data }
     settings = {
         debug = false,
-        announceKills = true,           -- announce kills in guild chat
-        announceKOSSighted = true,      -- alert when KOS target spotted
-        alertSound = true,              -- play sound on KOS spotted
-        autoKOSOnAttack = true,         -- auto-add any player who attacks you to KOS
-        broadcastSightings = true,      -- broadcast KOS sightings to guild
-        pointsPerKill = 5,             -- points for a random world PvP kill
-        pointsPerKOSKill = 25,         -- points for killing a KOS target
-        pointsPerBountyKill = 100,     -- points for killing a bounty target
-        officerRank = 1,               -- guild rank index that can manage KOS / bounties (0=GM, 1=officer)
+        announceKills = true,
+        announceKOSSighted = true,
+        alertSound = true,
+        autoKOSOnAttack = true,
+        broadcastSightings = true,
+        pointsPerKill = 5,
+        pointsPerKOSKill = 25,
+        pointsPerBountyKill = 100,
+        officerRank = 1,
         syncEnabled = true,
-        maxKillLogSize = 500,          -- max kill log entries to store
+        maxKillLogSize = 500,
         maxDeathLogSize = 500,
         minimapIcon = { hide = false, minimapPos = 220 },
-        theme = "deadpool",             -- active theme preset
-        uiScale = 1.0,                  -- UI scale (0.8 to 1.3)
+        theme = "deadpool",
+        uiScale = 1.0,
+        showDemoData = false,
+        nearbyWidgetPos = nil,
+        killSoundEnabled = true,
+        killSound = "gunshot",           -- gunshot, none, or custom
+        streakSoundsEnabled = true,    -- play announcer on kill streaks
+        deathSound = "gameover1",      -- sound when YOU die to a player
+        partyDeathSound = "partydeath", -- sound when party/raid member dies
+        partyAttackSound = "warning",    -- sound when party/raid member is attacked
+        kosAlertSound = "siren",       -- sound when KOS target spotted
+        showAlertFrame = true,
+        alertFramePos = nil,          -- {point, relPoint, x, y}
+    },
+    -- GM-managed guild config (syncs to all members, latest timestamp wins)
+    guildConfig = {
+        pointsPerKill = 10,
+        pointsPerKOSKill = 25,
+        pointsPerBountyKill = 100,
+        pointsUnderdogMultiplier3 = 2.0,   -- 3-5 levels higher
+        pointsUnderdogMultiplier6 = 3.0,   -- 6+ levels higher
+        pointsLowbieRange = 5,             -- within this many levels = full points
+        pointsLowbieReduction = 0.5,       -- 50% for 1 tier below range
+        pointsLowbieFloor = 1,             -- kills far below level
+        pointsLowbieTier2 = 10,            -- 2nd tier: this many levels below = floor
+        managers = {},                     -- ["Name-Realm"] = true, delegated by GM
+        warGuilds = {},                    -- ["Guild Name"] = true, guild-wide war declarations
+        updatedBy = "",
+        updatedAt = 0,                     -- unix timestamp, latest wins
     },
     syncVersion = 0,    -- incremented on KOS/bounty changes for sync protocol
     lastSync = 0,       -- timestamp of last full sync
@@ -65,7 +92,28 @@ function Deadpool:GetKOSEntry(fullName)
 end
 
 function Deadpool:IsKOS(fullName)
-    return self.db.kosList[fullName] ~= nil
+    if self.db.kosList[fullName] ~= nil then return true end
+    -- Check war guilds: if we know this player's guild and it's on the war list
+    local warGuilds = self.db.guildConfig and self.db.guildConfig.warGuilds
+    if warGuilds and next(warGuilds) then
+        -- Check enemy sheet for guild info
+        local enemy = self.db.enemySheet[fullName]
+        if enemy and enemy.guild and warGuilds[enemy.guild] then return true end
+        -- Also check KOS entry (shouldn't exist if purely war, but safety)
+    end
+    return false
+end
+
+function Deadpool:IsWarGuild(guildName)
+    if not guildName or guildName == "" then return false end
+    local warGuilds = self.db.guildConfig and self.db.guildConfig.warGuilds
+    return warGuilds and warGuilds[guildName] == true
+end
+
+function Deadpool:IsWarGuildKOS(fullName)
+    -- Returns true ONLY if this player is KOS because of a guild war (not manually added)
+    if self.db.kosList[fullName] then return false end  -- manually on KOS, not war-based
+    return self:IsKOS(fullName)  -- if IsKOS returns true but not on kosList, it's war guild
 end
 
 function Deadpool:GetKOSCount()
@@ -75,7 +123,8 @@ end
 function Deadpool:GetKOSSorted(sortField, ascending)
     sortField = sortField or "addedDate"
     local list = {}
-    for fullName, entry in pairs(self.db.kosList) do
+    local source = Deadpool.demoData:GetMergedKOS()
+    for fullName, entry in pairs(source) do
         entry._key = fullName
         table.insert(list, entry)
     end
@@ -100,7 +149,8 @@ end
 
 function Deadpool:GetActiveBounties()
     local list = {}
-    for fullName, bounty in pairs(self.db.bounties) do
+    local source = Deadpool.demoData:GetMergedBounties()
+    for fullName, bounty in pairs(source) do
         if not bounty.expired then
             bounty._key = fullName
             table.insert(list, bounty)
@@ -112,7 +162,8 @@ end
 
 function Deadpool:GetAllBounties()
     local list = {}
-    for fullName, bounty in pairs(self.db.bounties) do
+    local source = Deadpool.demoData:GetMergedBounties()
+    for fullName, bounty in pairs(source) do
         bounty._key = fullName
         table.insert(list, bounty)
     end
@@ -133,11 +184,12 @@ function Deadpool:AddKillLogEntry(entry)
 end
 
 function Deadpool:GetKillLog(filter)
+    local source = Deadpool.demoData:GetMergedKillLog()
     if not filter or filter == "all" then
-        return self.db.killLog
+        return source
     end
     local filtered = {}
-    for _, entry in ipairs(self.db.killLog) do
+    for _, entry in ipairs(source) do
         if filter == "kos" and entry.isKOS then
             table.insert(filtered, entry)
         elseif filter == "bounty" and entry.isBounty then
@@ -194,9 +246,13 @@ end
 function Deadpool:GetPublicEnemiesSorted(sortField)
     sortField = sortField or "timesKilledUs"
     local list = {}
-    for fullName, enemy in pairs(self.db.enemySheet) do
-        enemy._key = fullName
-        table.insert(list, enemy)
+    local source = Deadpool.demoData:GetMergedEnemySheet()
+    for fullName, enemy in pairs(source) do
+        -- Only include enemies who have actually killed guild members
+        if (enemy.timesKilledUs or 0) > 0 then
+            enemy._key = fullName
+            table.insert(list, enemy)
+        end
     end
     table.sort(list, function(a, b) return (a[sortField] or 0) > (b[sortField] or 0) end)
     return list
@@ -247,7 +303,8 @@ end
 function Deadpool:GetScoreboardSorted(sortField)
     sortField = sortField or "totalPoints"
     local list = {}
-    for fullName, score in pairs(self.db.scoreboard) do
+    local source = Deadpool.demoData:GetMergedScoreboard()
+    for fullName, score in pairs(source) do
         score._key = fullName
         table.insert(list, score)
     end
