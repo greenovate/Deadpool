@@ -19,7 +19,7 @@ local TABS = {
     { key = "kos",        label = "Kill on Sight" },
     { key = "bounties",   label = "Bounties" },
     { key = "enemies",    label = "Public Enemies" },
-    { key = "scoreboard", label = "Scoreboard" },
+    { key = "scoreboard", label = "Leaderboard" },
     { key = "mystats",    label = "My Stats" },
     { key = "killlog",    label = "Kill Log" },
     { key = "settings",   label = "Settings" },
