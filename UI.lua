@@ -379,27 +379,31 @@ function UI:CreateMainFrame()
     }
 
     StaticPopupDialogs["DEADPOOL_WIPE_SCOREBOARD"] = {
-        text = "RESET SCOREBOARD?\n\nThis will wipe all guild member scores and points.\nThis cannot be undone.",
+        text = "RESET SCOREBOARD?\n\nThis will wipe all guild member scores and points.\nThis resets for ALL guild members with the addon.\nThis cannot be undone.",
         button1 = "Reset", button2 = "Cancel",
         OnAccept = function()
             if not Deadpool:IsGM() then return end
             Deadpool.db.scoreboard = {}
+            Deadpool.db.guildConfig.scoreboardResetAt = time()
             Deadpool:BumpSyncVersion()
-            Deadpool:Print(Deadpool.colors.red .. "Scoreboard has been reset.|r")
+            Deadpool:BroadcastGMConfig()
+            Deadpool:Print(Deadpool.colors.red .. "Scoreboard has been reset for all guild members.|r")
             if Deadpool.RefreshUI then Deadpool:RefreshUI() end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
 
     StaticPopupDialogs["DEADPOOL_WIPE_KILLLOG"] = {
-        text = "RESET KILL LOG?\n\nThis will wipe all recorded kills.\nThis cannot be undone.",
+        text = "RESET KILL LOG?\n\nThis will wipe all recorded kills for all guild members.\nThis cannot be undone.",
         button1 = "Reset", button2 = "Cancel",
         OnAccept = function()
             if not Deadpool:IsGM() then return end
             Deadpool.db.killLog = {}
             Deadpool.db.deathLog = {}
+            Deadpool.db.guildConfig.killLogResetAt = time()
             Deadpool:BumpSyncVersion()
-            Deadpool:Print(Deadpool.colors.red .. "Kill log and death log have been reset.|r")
+            Deadpool:BroadcastGMConfig()
+            Deadpool:Print(Deadpool.colors.red .. "Kill log and death log have been reset for all guild members.|r")
             if Deadpool.RefreshUI then Deadpool:RefreshUI() end
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,

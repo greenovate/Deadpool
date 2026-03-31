@@ -20,6 +20,17 @@ function Deadpool:AddToKOS(nameOrFullName, reason, silent)
         return false
     end
 
+    -- Check KOS list cap (skip if already on list — we're updating, not adding)
+    if not self.db.kosList[fullName] then
+        local maxKOS = self.db.guildConfig.maxKOSEntries or 100
+        if self:TableCount(self.db.kosList) >= maxKOS then
+            if not silent then
+                self:Print(self.colors.red .. "KOS list is full (" .. maxKOS .. " targets). Remove someone first.|r")
+            end
+            return false
+        end
+    end
+
     -- Grab target info if we have the player targeted
     local class, race, level, guild
     if UnitExists("target") then

@@ -340,29 +340,7 @@ function Nearby:BuildWidget()
         row:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, -((i - 1) * ROW_HEIGHT))
         row:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", 0, -((i - 1) * ROW_HEIGHT))
         row:EnableMouse(true)
-        -- Secure target button overlay (for left-click targeting)
-        local secureBtn = CreateFrame("Button", "DeadpoolNearbySecure" .. i, row, "SecureActionButtonTemplate")
-        secureBtn:SetAllPoints(row)
-        secureBtn:SetAttribute("type", "macro")
-        secureBtn:SetAttribute("macrotext", "")
-        secureBtn:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-        secureBtn:SetScript("OnClick", function(self, button)
-            if button == "RightButton" then
-                local parentRow = self:GetParent()
-                if parentRow and parentRow._data then
-                    Nearby:ShowContextMenu(parentRow)
-                end
-            end
-        end)
-        secureBtn:SetScript("OnEnter", function(self)
-            local parentRow = self:GetParent()
-            if parentRow then
-                local handler = parentRow:GetScript("OnEnter")
-                if handler then handler(parentRow) end
-            end
-        end)
-        secureBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
-        row._secureBtn = secureBtn
+        row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
         -- Background for alternating rows
         local bg = row:CreateTexture(nil, "BACKGROUND")
@@ -440,7 +418,6 @@ function Nearby:BuildWidget()
                 local isKOS = Deadpool:IsKOS(d.fullName)
                 if isKOS then GameTooltip:AddLine("KILL ON SIGHT", 1, 0, 0) end
                 GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("Left-click to target", 0.5, 0.5, 0.5)
                 GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
                 GameTooltip:Show()
             end
@@ -578,12 +555,8 @@ function Nearby:UpdateWidget()
             row._data = d
             row:Show()
 
-            -- Update secure target button macro (only out of combat)
-            if row._secureBtn and not InCombatLockdown() then
-                local targetName = d.name or Deadpool:ShortName(d.fullName)
-                row._secureBtn:SetAttribute("macrotext", "/targetexact " .. targetName)
-                row._secureBtn:Show()
-            end
+            -- Update target unit (only out of combat — persists into combat)
+            -- DISABLED: secure targeting causing disconnects, needs proper implementation
 
             -- KOS indicator (red bar) or Aggressive indicator (orange bar)
             local isKOS = Deadpool:IsKOS(d.fullName)
@@ -684,9 +657,8 @@ function Nearby:UpdateWidget()
                 row._timerText:SetText(Deadpool.colors.grey .. remaining .. "s|r")
             end
         else
-            row:Hide()
+            if not InCombatLockdown() then row:Hide() end
             row._data = nil
-            if row._secureBtn and not InCombatLockdown() then row._secureBtn:Hide() end
         end
     end
 end

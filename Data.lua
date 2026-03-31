@@ -52,6 +52,9 @@ local DEFAULTS = {
         pointsLowbieTier2 = 10,            -- 2nd tier: this many levels below = floor
         managers = {},                     -- ["Name-Realm"] = true, delegated by GM
         warGuilds = {},                    -- ["Guild Name"] = true, guild-wide war declarations
+        scoreboardResetAt = 0,             -- timestamp of last scoreboard reset
+        killLogResetAt = 0,                -- timestamp of last kill log reset
+        maxKOSEntries = 100,               -- max KOS list size
         updatedBy = "",
         updatedAt = 0,                     -- unix timestamp, latest wins
     },

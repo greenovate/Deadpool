@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------
 
 Deadpool = {}
-Deadpool.version = "1.1.2"
+Deadpool.version = "1.1.3"
 Deadpool.prefix = "DEADPOOL"
 Deadpool.modules = {}
 

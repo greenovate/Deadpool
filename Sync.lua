@@ -107,9 +107,9 @@ function Sync:Send(msgType, data, target)
         payload = payload:sub(1, 255)
     end
 
-    local channel = target and "WHISPER" or "GUILD"
+    -- Always use GUILD channel — never whisper to prevent cross-guild data leaks
     if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        C_ChatInfo.SendAddonMessage(Deadpool.prefix, payload, channel, target)
+        C_ChatInfo.SendAddonMessage(Deadpool.prefix, payload, "GUILD")
     end
 end
 
@@ -117,6 +117,9 @@ end
 -- Receive handler
 ----------------------------------------------------------------------
 function Sync:OnAddonMessage(message, channel, sender)
+    -- Only accept messages from the GUILD channel
+    if channel ~= "GUILD" then return end
+
     -- Don't process our own messages
     local myName = UnitName("player")
     local senderName = sender:match("^(.-)%-") or sender
@@ -353,60 +356,58 @@ end
 -- Full sync: respond to sync requests
 ----------------------------------------------------------------------
 function Sync:HandleSyncRequest(sender)
-    -- Send our KOS list, bounties, and scoreboard to the requester
     Deadpool:Debug("Sync request from " .. sender .. " — sending data")
 
     local delay = 0
-    local BATCH_DELAY = 0.1  -- stagger messages
+    local BATCH_DELAY = 0.5  -- stagger messages (0.5s to prevent disconnect)
 
-    -- Send KOS entries
+    -- Send KOS entries (stripped: no race, reason truncated to 20 chars)
     for fullName, entry in pairs(Deadpool.db.kosList) do
         C_Timer.After(delay, function()
-            local data = encode(fullName, entry.class or "", entry.race or "",
-                entry.level or 0, entry.reason or "", entry.addedBy or "",
-                entry.addedDate or 0, entry.totalKills or 0)
-            Sync:Send(MSG.SYNC_KOS, data, sender)
+            local reason = entry.reason or ""
+            if #reason > 20 then reason = reason:sub(1, 20) end
+            local data = encode(fullName, entry.class or "", entry.level or 0,
+                reason, entry.addedBy or "", entry.addedDate or 0, entry.totalKills or 0)
+            Sync:Send(MSG.SYNC_KOS, data)
         end)
         delay = delay + BATCH_DELAY
     end
 
-    -- Send bounties
+    -- Send bounties (stripped: no placedBy, infer bountyType)
     for fullName, bounty in pairs(Deadpool.db.bounties) do
         C_Timer.After(delay, function()
             local data = encode(fullName, bounty.bountyGold or 0, bounty.maxKills or 10,
-                bounty.currentKills or 0, bounty.placedBy or "", bounty.placedDate or 0,
-                bounty.expired and "1" or "0",
-                bounty.bountyType or "gold", bounty.bountyPoints or 0)
-            Sync:Send(MSG.SYNC_BNT, data, sender)
+                bounty.currentKills or 0, bounty.placedDate or 0,
+                bounty.expired and "1" or "0", bounty.bountyPoints or 0)
+            Sync:Send(MSG.SYNC_BNT, data)
         end)
         delay = delay + BATCH_DELAY
     end
 
-    -- Send scoreboard
+    -- Send scoreboard (stripped: no bestStreak)
     for fullName, score in pairs(Deadpool.db.scoreboard) do
         C_Timer.After(delay, function()
             local data = encode(fullName, score.totalKills or 0, score.bountyKills or 0,
-                score.kosKills or 0, score.totalPoints or 0, score.bestStreak or 0)
-            Sync:Send(MSG.SYNC_SCR, data, sender)
+                score.kosKills or 0, score.totalPoints or 0)
+            Sync:Send(MSG.SYNC_SCR, data)
         end)
         delay = delay + BATCH_DELAY
     end
 
-    -- Send kill log (last 50 entries to keep sync manageable)
+    -- Send kill log (last 10 entries, stripped: no class or points)
     local killLog = Deadpool.db.killLog
-    local maxSync = math.min(#killLog, 50)
+    local maxSync = math.min(#killLog, 10)
     for i = 1, maxSync do
         local k = killLog[i]
         C_Timer.After(delay, function()
-            local data = encode(k.killer or "", k.victim or "", k.victimClass or "",
-                k.victimLevel or 0, k.zone or "", k.time or 0,
-                k.killType or "random", k.points or 0)
-            Sync:Send(MSG.SYNC_KILL, data, sender)
+            local data = encode(k.killer or "", k.victim or "",
+                k.victimLevel or 0, k.zone or "", k.time or 0, k.killType or "random")
+            Sync:Send(MSG.SYNC_KILL, data)
         end)
         delay = delay + BATCH_DELAY
     end
 
-    -- Send guild config
+    -- Send guild config (stripped: no managers/warGuilds — those sync via BroadcastGMConfig)
     C_Timer.After(delay, function()
         local gc = Deadpool.db.guildConfig
         local data = table.concat({
@@ -414,7 +415,7 @@ function Sync:HandleSyncRequest(sender)
             gc.pointsUnderdogMultiplier3 or 2.0, gc.pointsUnderdogMultiplier6 or 3.0,
             gc.pointsLowbieFloor or 1, gc.updatedBy or "", gc.updatedAt or 0,
         }, "|")
-        Sync:Send(MSG.GM_CONFIG, data, sender)
+        Sync:Send(MSG.GM_CONFIG, data)
     end)
     delay = delay + BATCH_DELAY
 
@@ -430,21 +431,18 @@ function Sync:HandleSyncKOS(data, sender)
     if not fullName or fullName == "" then return end
 
     local class = parts[2] ~= "" and parts[2] or nil
-    local race = parts[3] ~= "" and parts[3] or nil
-    local level = tonumber(parts[4]) or 0
-    local reason = parts[5] ~= "" and parts[5] or nil
-    local addedBy = parts[6] ~= "" and parts[6] or nil
-    local addedDate = tonumber(parts[7]) or 0
-    local totalKills = tonumber(parts[8]) or 0
+    local level = tonumber(parts[3]) or 0
+    local reason = parts[4] ~= "" and parts[4] or nil
+    local addedBy = parts[5] ~= "" and parts[5] or nil
+    local addedDate = tonumber(parts[6]) or 0
+    local totalKills = tonumber(parts[7]) or 0
 
-    -- Merge: add if missing, or update if remote has more kills
     local existing = Deadpool.db.kosList[fullName]
     if not existing then
         Deadpool.db.kosList[fullName] = {
             name = Deadpool:ShortName(fullName),
             realm = fullName:match("%-(.+)$") or "",
             class = class,
-            race = race,
             level = level > 0 and level or nil,
             addedBy = addedBy,
             addedDate = addedDate,
@@ -456,12 +454,10 @@ function Sync:HandleSyncKOS(data, sender)
             lastSeenTime = 0,
         }
     else
-        -- Merge: take highest kill count, update info if we have better data
         if totalKills > (existing.totalKills or 0) then
             existing.totalKills = totalKills
         end
         if class and not existing.class then existing.class = class end
-        if race and not existing.race then existing.race = race end
         if level > 0 and (not existing.level or existing.level == 0) then
             existing.level = level
         end
@@ -476,11 +472,10 @@ function Sync:HandleSyncBounty(data, sender)
     local gold = tonumber(parts[2]) or 0
     local maxKills = tonumber(parts[3]) or 10
     local currentKills = tonumber(parts[4]) or 0
-    local placedBy = parts[5] ~= "" and parts[5] or nil
-    local placedDate = tonumber(parts[6]) or 0
-    local expired = parts[7] == "1"
-    local bountyType = (parts[8] and parts[8] ~= "") and parts[8] or "gold"
-    local bountyPoints = tonumber(parts[9]) or 0
+    local placedDate = tonumber(parts[5]) or 0
+    local expired = parts[6] == "1"
+    local bountyPoints = tonumber(parts[7]) or 0
+    local bountyType = (bountyPoints > 0 and gold == 0) and "points" or "gold"
 
     local existing = Deadpool.db.bounties[fullName]
     if not existing then
@@ -489,7 +484,6 @@ function Sync:HandleSyncBounty(data, sender)
             bountyGold = gold,
             bountyPoints = bountyPoints,
             bountyType = bountyType,
-            placedBy = placedBy,
             placedDate = placedDate,
             maxKills = maxKills,
             currentKills = currentKills,
@@ -497,7 +491,6 @@ function Sync:HandleSyncBounty(data, sender)
             claims = {},
         }
     else
-        -- Merge: take higher kill/gold/points counts
         if currentKills > (existing.currentKills or 0) then
             existing.currentKills = currentKills
         end
@@ -506,7 +499,6 @@ function Sync:HandleSyncBounty(data, sender)
         end
         if bountyPoints > (existing.bountyPoints or 0) then
             existing.bountyPoints = bountyPoints
-            existing.bountyType = bountyType
         end
         if expired and not existing.expired then
             existing.expired = true
@@ -523,15 +515,21 @@ function Sync:HandleSyncScore(data, sender)
     local bountyKills = tonumber(parts[3]) or 0
     local kosKills = tonumber(parts[4]) or 0
     local totalPoints = tonumber(parts[5]) or 0
-    local bestStreak = tonumber(parts[6]) or 0
+
+    -- Reject if scoreboard was recently reset and incoming data looks stale
+    -- (if we have a reset timestamp and the remote has data but we don't,
+    --  it means they haven't received the reset yet — ignore their old scores)
+    local resetAt = Deadpool.db.guildConfig.scoreboardResetAt or 0
+    if resetAt > 0 and not Deadpool.db.scoreboard[fullName] and totalKills > 0 then
+        -- We have a reset, they're sending pre-reset data — skip
+        return
+    end
 
     local score = Deadpool:GetOrCreateScore(fullName)
-    -- Merge: take highest values
     if totalKills > (score.totalKills or 0) then score.totalKills = totalKills end
     if bountyKills > (score.bountyKills or 0) then score.bountyKills = bountyKills end
     if kosKills > (score.kosKills or 0) then score.kosKills = kosKills end
     if totalPoints > (score.totalPoints or 0) then score.totalPoints = totalPoints end
-    if bestStreak > (score.bestStreak or 0) then score.bestStreak = bestStreak end
 end
 
 function Sync:HandleSyncKill(data, sender)
@@ -540,32 +538,27 @@ function Sync:HandleSyncKill(data, sender)
     local victim = parts[2]
     if not killer or killer == "" or not victim or victim == "" then return end
 
-    local victimClass = parts[3] ~= "" and parts[3] or nil
-    local victimLevel = tonumber(parts[4]) or 0
-    local zone = parts[5] or "Unknown"
-    local killTime = tonumber(parts[6]) or 0
-    local killType = parts[7] or "random"
-    local points = tonumber(parts[8]) or 0
+    local victimLevel = tonumber(parts[3]) or 0
+    local zone = parts[4] or "Unknown"
+    local killTime = tonumber(parts[5]) or 0
+    local killType = parts[6] or "random"
 
-    -- Deduplicate: check if we already have this exact kill (same killer+victim+time)
+    -- Deduplicate
     for _, existing in ipairs(Deadpool.db.killLog) do
         if existing.killer == killer and existing.victim == victim
             and existing.time and killTime > 0 and math.abs((existing.time or 0) - killTime) < 10 then
-            return  -- already have it
+            return
         end
     end
 
-    -- Add to kill log
     Deadpool:AddKillLogEntry({
         killer = killer,
         victim = victim,
-        victimClass = victimClass,
         victimLevel = victimLevel > 0 and victimLevel or nil,
         zone = zone,
         time = killTime,
         isKOS = (killType == "kos" or killType == "bounty"),
         isBounty = (killType == "bounty"),
-        points = points,
         killType = killType,
     })
 end
@@ -675,6 +668,8 @@ function Deadpool:BroadcastGMConfig()
         gc.updatedAt or 0,
         mgrList,
         warList,
+        gc.scoreboardResetAt or 0,
+        gc.killLogResetAt or 0,
     }, "|")
     Sync:Send(MSG.GM_CONFIG, data)
     self:Print(Deadpool.colors.gold .. "Guild config pushed to all members.|r")
@@ -720,6 +715,25 @@ function Sync:HandleGMConfig(data, sender)
         for guild in warStr:gmatch("([^,]+)") do
             Deadpool.db.guildConfig.warGuilds[guild] = true
         end
+    end
+
+    -- Check for scoreboard reset signal
+    local remoteScoreReset = tonumber(parts[11]) or 0
+    local localScoreReset = Deadpool.db.guildConfig.scoreboardResetAt or 0
+    if remoteScoreReset > localScoreReset then
+        Deadpool.db.guildConfig.scoreboardResetAt = remoteScoreReset
+        Deadpool.db.scoreboard = {}
+        Deadpool:Print(Deadpool.colors.red .. "Scoreboard reset by GM — scores wiped.|r")
+    end
+
+    -- Check for kill log reset signal
+    local remoteKillReset = tonumber(parts[12]) or 0
+    local localKillReset = Deadpool.db.guildConfig.killLogResetAt or 0
+    if remoteKillReset > localKillReset then
+        Deadpool.db.guildConfig.killLogResetAt = remoteKillReset
+        Deadpool.db.killLog = {}
+        Deadpool.db.deathLog = {}
+        Deadpool:Print(Deadpool.colors.red .. "Kill log reset by GM — logs wiped.|r")
     end
 
     local senderShort = sender:match("^(.-)%-") or sender
@@ -790,35 +804,17 @@ end
 ----------------------------------------------------------------------
 function Sync:PushFullStateToGuild()
     -- Can't use C_Timer here (we're logging out), so send synchronously
-    -- Send KOS entries
+    -- Only send KOS + scoreboard on logout (minimal footprint)
     for fullName, entry in pairs(Deadpool.db.kosList) do
-        local data = encode(fullName, entry.class or "", entry.race or "",
-            entry.level or 0, entry.reason or "", entry.addedBy or "",
-            entry.addedDate or 0, entry.totalKills or 0)
+        local reason = entry.reason or ""
+        if #reason > 20 then reason = reason:sub(1, 20) end
+        local data = encode(fullName, entry.class or "", entry.level or 0,
+            reason, entry.addedBy or "", entry.addedDate or 0, entry.totalKills or 0)
         Sync:Send(MSG.SYNC_KOS, data)
     end
-    -- Send bounties
-    for fullName, bounty in pairs(Deadpool.db.bounties) do
-        local data = encode(fullName, bounty.bountyGold or 0, bounty.maxKills or 10,
-            bounty.currentKills or 0, bounty.placedBy or "", bounty.placedDate or 0,
-            bounty.expired and "1" or "0",
-            bounty.bountyType or "gold", bounty.bountyPoints or 0)
-        Sync:Send(MSG.SYNC_BNT, data)
-    end
-    -- Send scoreboard
     for fullName, score in pairs(Deadpool.db.scoreboard) do
         local data = encode(fullName, score.totalKills or 0, score.bountyKills or 0,
-            score.kosKills or 0, score.totalPoints or 0, score.bestStreak or 0)
+            score.kosKills or 0, score.totalPoints or 0)
         Sync:Send(MSG.SYNC_SCR, data)
-    end
-    -- Send kill log (last 50 entries)
-    local killLog = Deadpool.db.killLog
-    local maxSync = math.min(#killLog, 50)
-    for i = 1, maxSync do
-        local k = killLog[i]
-        local data = encode(k.killer or "", k.victim or "", k.victimClass or "",
-            k.victimLevel or 0, k.zone or "", k.time or 0,
-            k.killType or "random", k.points or 0)
-        Sync:Send(MSG.SYNC_KILL, data)
     end
 end
