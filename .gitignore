@@ -10,3 +10,7 @@ Thumbs.db
 .vscode/
 *.swp
 *~
+
+# Deploy secrets
+.curseforge-token
+deploy-curseforge.ps1
