@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------
 
 Deadpool = {}
-Deadpool.version = "1.1.4"
+Deadpool.version = "1.1.5"
 Deadpool.prefix = "DEADPOOL"
 Deadpool.modules = {}
 
@@ -168,6 +168,40 @@ end
 function Deadpool:IsGM()
     local rank = self:GetGuildRank()
     return rank == 0
+end
+
+----------------------------------------------------------------------
+-- Guild membership check (cached, refreshed on roster update)
+----------------------------------------------------------------------
+local guildRosterCache = {}
+local rosterCacheTime = 0
+
+function Deadpool:RefreshGuildRoster()
+    guildRosterCache = {}
+    if not IsInGuild() then return end
+    local numTotal = GetNumGuildMembers()
+    for i = 1, numTotal do
+        local name = GetGuildRosterInfo(i)
+        if name then
+            guildRosterCache[name] = true
+            -- Also cache without realm
+            local short = name:match("^(.-)%-")
+            if short then guildRosterCache[short] = true end
+        end
+    end
+    rosterCacheTime = time()
+end
+
+function Deadpool:IsGuildMember(fullName)
+    if not fullName then return false end
+    -- Refresh cache every 5 minutes
+    if (time() - rosterCacheTime) > 300 then
+        self:RefreshGuildRoster()
+    end
+    if guildRosterCache[fullName] then return true end
+    local short = fullName:match("^(.-)%-")
+    if short and guildRosterCache[short] then return true end
+    return false
 end
 
 function Deadpool:IsOfficer()
@@ -677,6 +711,29 @@ function Deadpool:Init()
     -- Register addon message prefix for guild sync
     if C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
         C_ChatInfo.RegisterAddonMessagePrefix(self.prefix)
+    end
+
+    -- Initialize guild roster cache
+    self:RefreshGuildRoster()
+    self:RegisterEvent("GUILD_ROSTER_UPDATE", function()
+        Deadpool:RefreshGuildRoster()
+    end)
+
+    -- Clean scoreboard: remove any non-guild entries (from pre-fix cross-guild contamination)
+    if IsInGuild() then
+        C_Timer.After(10, function()
+            Deadpool:RefreshGuildRoster()
+            local removed = 0
+            for fullName in pairs(Deadpool.db.scoreboard) do
+                if not Deadpool:IsGuildMember(fullName) then
+                    Deadpool.db.scoreboard[fullName] = nil
+                    removed = removed + 1
+                end
+            end
+            if removed > 0 then
+                Deadpool:Print(Deadpool.colors.grey .. "Cleaned " .. removed .. " non-guild entries from leaderboard.|r")
+            end
+        end)
     end
 
     -- Initialize modules in dependency order (Theme before UI)

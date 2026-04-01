@@ -511,6 +511,9 @@ function Sync:HandleSyncScore(data, sender)
     local fullName = parts[1]
     if not fullName or fullName == "" then return end
 
+    -- Only accept scores for guild members
+    if not Deadpool:IsGuildMember(fullName) then return end
+
     local totalKills = tonumber(parts[2]) or 0
     local bountyKills = tonumber(parts[3]) or 0
     local kosKills = tonumber(parts[4]) or 0

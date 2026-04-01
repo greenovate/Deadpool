@@ -328,6 +328,9 @@ end
 -- Points System
 ----------------------------------------------------------------------
 function Deadpool:AwardKillPoints(killerFullName, victimFullName, killType, victimLevel)
+    -- Only track scores for guild members
+    if not self:IsGuildMember(killerFullName) then return 0 end
+
     local score = self:GetOrCreateScore(killerFullName)
     local gc = self:GetPointsConfig()
     local points = 0
