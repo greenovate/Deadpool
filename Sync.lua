@@ -384,14 +384,18 @@ function Sync:HandleSyncRequest(sender)
         delay = delay + BATCH_DELAY
     end
 
-    -- Send scoreboard (stripped: no bestStreak)
-    for fullName, score in pairs(Deadpool.db.scoreboard) do
-        C_Timer.After(delay, function()
-            local data = encode(fullName, score.totalKills or 0, score.bountyKills or 0,
-                score.kosKills or 0, score.totalPoints or 0)
-            Sync:Send(MSG.SYNC_SCR, data)
-        end)
-        delay = delay + BATCH_DELAY
+    -- Send scoreboard (skip during 24hr reset window to prevent old data spreading)
+    local resetAt = Deadpool.db.guildConfig.scoreboardResetAt or 0
+    local inResetWindow = resetAt > 0 and (time() - resetAt) < 86400
+    if not inResetWindow then
+        for fullName, score in pairs(Deadpool.db.scoreboard) do
+            C_Timer.After(delay, function()
+                local data = encode(fullName, score.totalKills or 0, score.bountyKills or 0,
+                    score.kosKills or 0, score.totalPoints or 0)
+                Sync:Send(MSG.SYNC_SCR, data)
+            end)
+            delay = delay + BATCH_DELAY
+        end
     end
 
     -- Send kill log (last 10 entries, stripped: no class or points)
@@ -511,7 +515,6 @@ function Sync:HandleSyncScore(data, sender)
     local fullName = parts[1]
     if not fullName or fullName == "" then return end
 
-    -- Only accept scores for guild members
     if not Deadpool:IsGuildMember(fullName) then return end
 
     local totalKills = tonumber(parts[2]) or 0
@@ -519,12 +522,9 @@ function Sync:HandleSyncScore(data, sender)
     local kosKills = tonumber(parts[4]) or 0
     local totalPoints = tonumber(parts[5]) or 0
 
-    -- Reject if scoreboard was recently reset and incoming data looks stale
-    -- (if we have a reset timestamp and the remote has data but we don't,
-    --  it means they haven't received the reset yet — ignore their old scores)
+    -- Block score sync for 24 hours after a reset to prevent old data merging back
     local resetAt = Deadpool.db.guildConfig.scoreboardResetAt or 0
-    if resetAt > 0 and not Deadpool.db.scoreboard[fullName] and totalKills > 0 then
-        -- We have a reset, they're sending pre-reset data — skip
+    if resetAt > 0 and (time() - resetAt) < 86400 then
         return
     end
 
@@ -807,7 +807,6 @@ end
 ----------------------------------------------------------------------
 function Sync:PushFullStateToGuild()
     -- Can't use C_Timer here (we're logging out), so send synchronously
-    -- Only send KOS + scoreboard on logout (minimal footprint)
     for fullName, entry in pairs(Deadpool.db.kosList) do
         local reason = entry.reason or ""
         if #reason > 20 then reason = reason:sub(1, 20) end
@@ -815,9 +814,13 @@ function Sync:PushFullStateToGuild()
             reason, entry.addedBy or "", entry.addedDate or 0, entry.totalKills or 0)
         Sync:Send(MSG.SYNC_KOS, data)
     end
-    for fullName, score in pairs(Deadpool.db.scoreboard) do
-        local data = encode(fullName, score.totalKills or 0, score.bountyKills or 0,
-            score.kosKills or 0, score.totalPoints or 0)
-        Sync:Send(MSG.SYNC_SCR, data)
+    -- Skip scoreboard during 24hr reset window
+    local resetAt = Deadpool.db.guildConfig.scoreboardResetAt or 0
+    if resetAt == 0 or (time() - resetAt) >= 86400 then
+        for fullName, score in pairs(Deadpool.db.scoreboard) do
+            local data = encode(fullName, score.totalKills or 0, score.bountyKills or 0,
+                score.kosKills or 0, score.totalPoints or 0)
+            Sync:Send(MSG.SYNC_SCR, data)
+        end
     end
 end
