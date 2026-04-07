@@ -15,14 +15,16 @@ local TAB_HEIGHT = 28
 
 -- Tab definitions
 local TABS = {
-    { key = "dashboard",  label = "Dashboard" },
-    { key = "kos",        label = "Kill on Sight" },
-    { key = "bounties",   label = "Bounties" },
-    { key = "enemies",    label = "Public Enemies" },
-    { key = "scoreboard", label = "Leaderboard" },
-    { key = "mystats",    label = "My Stats" },
-    { key = "killlog",    label = "Kill Log" },
-    { key = "settings",   label = "Settings" },
+    { key = "dashboard",     label = "Dashboard" },
+    { key = "kos",           label = "Kill on Sight" },
+    { key = "bounties",      label = "Bounties" },
+    { key = "enemies",       label = "Enemies" },
+    { key = "scoreboard",    label = "Leaderboard" },
+    { key = "quests",        label = "Quests" },
+    { key = "achievements",  label = "Achievements" },
+    { key = "mystats",       label = "My Stats" },
+    { key = "killlog",       label = "Kill Log" },
+    { key = "settings",      label = "Settings" },
 }
 
 -- Local references
@@ -193,13 +195,11 @@ function UI:CreateMainFrame()
     titleText:SetText(Deadpool.modules.Theme:AccentHex() .. "DEADPOOL|r")
     mainFrame.titleText = titleText
 
-    -- ElvUI badge if detected
-    if Deadpool.modules.Theme.isElvUI then
-        local elvBadge = titleBar:CreateFontString(nil, "OVERLAY")
-        elvBadge:SetFont(Deadpool.modules.Theme:GetBodyFont())
-        elvBadge:SetPoint("LEFT", titleText, "RIGHT", 10, 0)
-        elvBadge:SetText("|cFF00DDFF[ElvUI]|r")
-    end
+    -- Author credit
+    local authorBadge = titleBar:CreateFontString(nil, "OVERLAY")
+    authorBadge:SetFont(Deadpool.modules.Theme:GetBodyFont())
+    authorBadge:SetPoint("LEFT", titleText, "RIGHT", 10, 0)
+    authorBadge:SetText(Deadpool.colors.grey .. "by Evildz|r")
 
     -- Version label
     local verText = titleBar:CreateFontString(nil, "OVERLAY")
@@ -297,6 +297,12 @@ function UI:CreateMainFrame()
     end)
     syncBtn:SetPoint("RIGHT", addBtn, "LEFT", -6, 0)
     mainFrame.syncBtn = syncBtn
+
+    local changelogBtn = CreateThemedButton(bottomBar, 80, "Changelog", function()
+        UI:ShowChangelog()
+    end)
+    changelogBtn:SetPoint("RIGHT", syncBtn, "LEFT", -6, 0)
+    mainFrame.changelogBtn = changelogBtn
 
     -- Popup dialogs
     StaticPopupDialogs["DEADPOOL_ADD_KOS"] = {
@@ -408,6 +414,24 @@ function UI:CreateMainFrame()
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
+
+    StaticPopupDialogs["DEADPOOL_PURGE_KOS"] = {
+        text = "PURGE KOS LIST?\n\nThis will remove all KOS entries for ALL guild members.\nEntries with active bounties will be preserved.\nThis cannot be undone.",
+        button1 = "Purge", button2 = "Cancel",
+        OnAccept = function()
+            Deadpool:PurgeKOSList()
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
+
+    StaticPopupDialogs["DEADPOOL_PURGE_MY_KOS"] = {
+        text = "REMOVE YOUR KOS ENTRIES?\n\nThis will remove all KOS entries that YOU added.\nEntries with active bounties will be kept.\nOther members' entries are not affected.",
+        button1 = "Remove Mine", button2 = "Cancel",
+        OnAccept = function()
+            Deadpool:PurgeMyKOSEntries()
+        end,
+        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
+    }
 end
 
 ----------------------------------------------------------------------
@@ -473,6 +497,8 @@ function UI:SelectTab(key)
     if contentArea then contentArea:Hide() end
     if dashboardFrame then dashboardFrame:Hide() end
     if UI.settingsPanel then UI.settingsPanel:Hide() end
+    if UI.questsPanel then UI.questsPanel:Hide() end
+    if UI.achievementsPanel then UI.achievementsPanel:Hide() end
 
     -- Reset scroll on tab switch
     scrollOffset = 0
@@ -485,6 +511,10 @@ function UI:SelectTab(key)
         if dashboardFrame then dashboardFrame:Show(); self:RenderDashboard() end
     elseif key == "settings" then
         self:ShowSettingsPanel()
+    elseif key == "quests" then
+        self:ShowQuestsPanel()
+    elseif key == "achievements" then
+        self:ShowAchievementsPanel()
     else
         if contentArea then contentArea:Show() end
     end
@@ -765,13 +795,15 @@ function UI:RefreshContent()
     if not contentArea then return end
     self:LayoutTabs()
 
-    if activeTab == "dashboard" or activeTab == "settings" then
+    if activeTab == "dashboard" or activeTab == "settings" or activeTab == "quests" or activeTab == "achievements" then
         if filterBar then filterBar:Hide() end
         return
     end
 
     if dashboardFrame then dashboardFrame:Hide() end
     if UI.settingsPanel then UI.settingsPanel:Hide() end
+    if UI.questsPanel then UI.questsPanel:Hide() end
+    if UI.achievementsPanel then UI.achievementsPanel:Hide() end
 
     -- Filter bar: show only on filterable tabs, reposition content accordingly
     local showFilter = (activeTab == "kos" or activeTab == "bounties" or activeTab == "enemies"
@@ -1182,12 +1214,28 @@ function UI:RenderMyStats()
     table.insert(lines, { label = Deadpool.colors.header .. "=== YOUR STATS ===|r", value = "" })
     table.insert(lines, { label = "Rank", value = Deadpool.colors.gold .. "#" .. rank .. "|r" })
     table.insert(lines, { label = "Total Points", value = Deadpool.colors.yellow .. (score.totalPoints or 0) .. "|r" })
+    -- Achievement points breakdown
+    local AM = Deadpool.modules.Achievements
+    local achPts = AM and AM:GetTotalPoints() or 0
+    local achEarned = AM and AM:GetEarnedCount() or 0
+    local achTotal = AM and AM:GetTotalCount() or 0
+    table.insert(lines, { label = "Achievement Points", value = Deadpool.colors.gold .. achPts .. "|r  (" .. achEarned .. "/" .. achTotal .. " earned)" })
     table.insert(lines, { label = "Total Kills", value = Deadpool.colors.green .. (score.totalKills or 0) .. "|r" })
     table.insert(lines, { label = "KOS Kills", value = Deadpool.colors.red .. (score.kosKills or 0) .. "|r" })
     table.insert(lines, { label = "Bounty Kills", value = Deadpool.colors.gold .. (score.bountyKills or 0) .. "|r" })
     table.insert(lines, { label = "Random PvP Kills", value = tostring(score.randomKills or 0) })
     table.insert(lines, { label = "Best Streak", value = Deadpool.colors.orange .. (score.bestStreak or 0) .. "|r" })
     table.insert(lines, { label = "Last Kill", value = Deadpool:TimeAgo(score.lastKill) })
+    -- Highest crit
+    local critData = Deadpool.db.highestCrit
+    if critData and critData.amount and critData.amount > 0 then
+        table.insert(lines, { label = "Highest Crit", value = Deadpool.colors.orange .. critData.amount .. "|r on " ..
+            Deadpool.colors.red .. Deadpool:ShortName(critData.victim or "?") .. "|r  (" ..
+            Deadpool:FormatDate(critData.time or 0) .. ")" })
+    else
+        table.insert(lines, { label = "Highest Crit", value = Deadpool.colors.grey .. "none recorded|r" })
+    end
+    table.insert(lines, { label = "Assists", value = tostring(score.assists or 0) })
     table.insert(lines, { label = "", value = "" })
     table.insert(lines, { label = Deadpool.colors.header .. "=== DEATHS ===|r", value = "" })
     table.insert(lines, { label = "Total Deaths", value = Deadpool.colors.red .. #(Deadpool.demoData:GetMergedDeathLog()) .. "|r" })
@@ -1295,6 +1343,550 @@ function UI:RenderKillLog()
         else row:Hide(); row.data = nil end
     end
     statusText:SetText(#Deadpool.db.killLog .. " kills logged")
+end
+
+----------------------------------------------------------------------
+-- Quests Panel (dedicated styled panel with quest cards)
+----------------------------------------------------------------------
+function UI:ShowQuestsPanel()
+    if UI.questsPanel then
+        UI.questsPanel:Hide()
+        UI.questsPanel:SetParent(nil)
+        UI.questsPanel = nil
+    end
+    self:BuildQuestsPanel()
+    UI.questsPanel:Show()
+end
+
+function UI:BuildQuestsPanel()
+    local TM = Deadpool.modules.Theme
+    local t = TM.active
+    local QM = Deadpool.modules.Quests
+    local accentHex = TM:AccentHex()
+
+    local panel = CreateFrame("Frame", nil, mainFrame)
+    panel:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
+    panel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 28)
+    panel:Hide()
+    UI.questsPanel = panel
+
+    -- ScrollFrame
+    local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
+    scrollFrame:SetPoint("TOPLEFT", 0, 0)
+    scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local cur = self:GetVerticalScroll()
+        local max = math.max(0, (self:GetScrollChild():GetHeight() or 0) - self:GetHeight())
+        self:SetVerticalScroll(math.max(0, math.min(max, cur - delta * 40)))
+    end)
+
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetWidth(FRAME_WIDTH - 40)
+    content:SetHeight(800)
+    scrollFrame:SetScrollChild(content)
+
+    local fw = FRAME_WIDTH - 40
+    local cy = 0
+
+    if not QM then
+        local msg = content:CreateFontString(nil, "OVERLAY")
+        msg:SetFont(TM:GetFont(14, "")); msg:SetPoint("TOPLEFT", 20, -20)
+        msg:SetText("Quest module not loaded."); msg:SetTextColor(1,0.3,0.3)
+        statusText:SetText("Quests"); return
+    end
+
+    local dailies, dProg, dComp = QM:GetDailies()
+    local weeklies, wProg, wComp = QM:GetWeeklies()
+
+    -- Helper: build a quest card
+    local function QuestCard(parent, x, y, w, h, quest, progress, goal, completed, reward, isWeekly)
+        local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+        card:SetSize(w, h)
+        card:SetPoint("TOPLEFT", parent, "TOPLEFT", x, -y)
+        card:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+        })
+
+        if completed then
+            card:SetBackdropColor(t.accent[1]*0.1, t.accent[2]*0.1 + 0.05, t.accent[3]*0.1, 0.9)
+            card:SetBackdropBorderColor(t.positive[1], t.positive[2], t.positive[3], 0.6)
+        else
+            card:SetBackdropColor(t.bgAlt[1], t.bgAlt[2], t.bgAlt[3], t.bgAlt[4] or 0.9)
+            card:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.4)
+        end
+
+        -- Top accent bar
+        local accent = card:CreateTexture(nil, "ARTWORK")
+        accent:SetHeight(2); accent:SetPoint("TOPLEFT", 1, -1); accent:SetPoint("TOPRIGHT", -1, -1)
+        if completed then
+            accent:SetColorTexture(t.positive[1], t.positive[2], t.positive[3], 0.9)
+        elseif isWeekly then
+            accent:SetColorTexture(t.gold[1], t.gold[2], t.gold[3], 0.9)
+        else
+            accent:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.8)
+        end
+
+        -- Status icon (real WoW texture)
+        local QUEST_ICONS = {
+            CLASS_KILL     = "Interface\\Icons\\Ability_DualWield",
+            RACE_KILL      = "Interface\\Icons\\Spell_Holy_MindVision",
+            ZONE_KILL      = "Interface\\Icons\\INV_Misc_Map_01",
+            KOS_KILL       = "Interface\\Icons\\Ability_Rogue_MasterOfSubtlety",
+            BOUNTY_KILL    = "Interface\\Icons\\INV_Misc_Coin_02",
+            TOTAL_KILL     = "Interface\\Icons\\INV_Axe_03",
+            STREAK         = "Interface\\Icons\\Spell_Fire_Incinerate",
+            MULTI_ZONE     = "Interface\\Icons\\INV_Misc_Map02",
+            CONTINENT_KILL = "Interface\\Icons\\Spell_Arcane_TeleportStormwind",
+        }
+        local iconTex = card:CreateTexture(nil, "ARTWORK")
+        iconTex:SetSize(32, 32); iconTex:SetPoint("LEFT", 10, 6)
+        iconTex:SetTexture(QUEST_ICONS[quest.type] or "Interface\\Icons\\INV_Scroll_03")
+        iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- crop default icon border
+
+        -- Desaturate if not started
+        if not completed and progress == 0 then
+            iconTex:SetDesaturated(true)
+            iconTex:SetAlpha(0.5)
+        elseif completed then
+            iconTex:SetDesaturated(false)
+            iconTex:SetAlpha(1)
+        else
+            iconTex:SetDesaturated(false)
+            iconTex:SetAlpha(0.85)
+        end
+
+        -- Completion check overlay
+        if completed then
+            local check = card:CreateTexture(nil, "OVERLAY")
+            check:SetSize(16, 16); check:SetPoint("BOTTOMRIGHT", iconTex, "BOTTOMRIGHT", 2, -2)
+            check:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+        elseif progress > 0 then
+            local prog_icon = card:CreateTexture(nil, "OVERLAY")
+            prog_icon:SetSize(14, 14); prog_icon:SetPoint("BOTTOMRIGHT", iconTex, "BOTTOMRIGHT", 2, -2)
+            prog_icon:SetTexture("Interface\\RaidFrame\\ReadyCheck-Waiting")
+        end
+
+        -- Quest name
+        local nameText = card:CreateFontString(nil, "OVERLAY")
+        nameText:SetFont(TM:GetFont(12, "OUTLINE")); nameText:SetPoint("TOPLEFT", 50, -10)
+        nameText:SetWidth(w - 120)
+        nameText:SetWordWrap(false)
+        if completed then
+            nameText:SetText(Deadpool.colors.green .. quest.name .. "|r")
+        else
+            nameText:SetText("|cFFFFFFFF" .. quest.name .. "|r")
+        end
+
+        -- Quest description
+        local descText = card:CreateFontString(nil, "OVERLAY")
+        descText:SetFont(TM:GetFont(10, "")); descText:SetPoint("TOPLEFT", 50, -28)
+        descText:SetWidth(w - 60); descText:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+        descText:SetWordWrap(true)
+        descText:SetText(quest.desc)
+
+        -- Progress bar
+        local barBg = CreateFrame("Frame", nil, card, "BackdropTemplate")
+        barBg:SetSize(w - 56, 14); barBg:SetPoint("BOTTOMLEFT", 50, 10)
+        barBg:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        barBg:SetBackdropColor(t.barBg[1], t.barBg[2], t.barBg[3], t.barBg[4] or 0.8)
+
+        local barFill = barBg:CreateTexture(nil, "ARTWORK")
+        barFill:SetPoint("TOPLEFT", 0, 0); barFill:SetPoint("BOTTOMLEFT", 0, 0)
+        barFill:SetTexture("Interface\\Buttons\\WHITE8x8")
+        local pct = goal > 0 and math.min(progress / goal, 1) or 0
+        barFill:SetWidth(math.max(1, barBg:GetWidth() * pct))
+        if completed then
+            barFill:SetVertexColor(t.positive[1], t.positive[2], t.positive[3], 1)
+        else
+            barFill:SetVertexColor(t.barFill[1], t.barFill[2], t.barFill[3], t.barFill[4] or 1)
+        end
+
+        local barText = barBg:CreateFontString(nil, "OVERLAY")
+        barText:SetFont(TM:GetFont(9, "OUTLINE")); barText:SetPoint("CENTER")
+        barText:SetText(progress .. " / " .. goal)
+        barText:SetShadowOffset(1, -1); barText:SetShadowColor(0, 0, 0, 1)
+
+        -- Reward badge (top right)
+        local badge = card:CreateFontString(nil, "OVERLAY")
+        badge:SetFont(TM:GetFont(12, "OUTLINE")); badge:SetPoint("TOPRIGHT", -10, -10)
+        badge:SetText(Deadpool.colors.gold .. "+" .. reward .. " pts|r")
+
+        -- Type badge
+        local typeBadge = card:CreateFontString(nil, "OVERLAY")
+        typeBadge:SetFont(TM:GetFont(8, "OUTLINE")); typeBadge:SetPoint("BOTTOMRIGHT", -10, 10)
+        if isWeekly then
+            typeBadge:SetText("|cFFFFD700WEEKLY|r")
+        else
+            typeBadge:SetText(accentHex .. "DAILY|r")
+        end
+
+        return card
+    end
+
+    -- DAILY QUESTS section
+    local headerD = content:CreateFontString(nil, "OVERLAY")
+    headerD:SetFont(TM:GetFont(14, "OUTLINE")); headerD:SetPoint("TOPLEFT", 8, -cy)
+    local dailyReset = QM:FormatDuration(QM:GetDailyResetTime())
+    headerD:SetText(accentHex .. "DAILY CONTRACTS|r")
+    headerD:SetTextColor(t.accent[1], t.accent[2], t.accent[3])
+
+    local resetD = content:CreateFontString(nil, "OVERLAY")
+    resetD:SetFont(TM:GetFont(10, "")); resetD:SetPoint("LEFT", headerD, "RIGHT", 12, 0)
+    resetD:SetText(Deadpool.colors.grey .. "Resets in " .. dailyReset .. "|r")
+    cy = cy + 22
+
+    local cardW = math.floor((fw - 20) / 3) - 6
+    local cardH = 110
+    for i, q in ipairs(dailies or {}) do
+        local cx = 4 + (i - 1) * (cardW + 8)
+        QuestCard(content, cx, cy, cardW, cardH, q, dProg[i] or 0, q.count, dComp[i], q.reward, false)
+    end
+    cy = cy + cardH + 16
+
+    -- WEEKLY QUESTS section
+    local headerW = content:CreateFontString(nil, "OVERLAY")
+    headerW:SetFont(TM:GetFont(14, "OUTLINE")); headerW:SetPoint("TOPLEFT", content, "TOPLEFT", 8, -cy)
+    local weeklyReset = QM:FormatDuration(QM:GetWeeklyResetTime())
+    headerW:SetText("|cFFFFD700WEEKLY CONTRACTS|r")
+
+    local resetW = content:CreateFontString(nil, "OVERLAY")
+    resetW:SetFont(TM:GetFont(10, "")); resetW:SetPoint("LEFT", headerW, "RIGHT", 12, 0)
+    resetW:SetText(Deadpool.colors.grey .. "Resets in " .. weeklyReset .. "|r")
+    cy = cy + 22
+
+    local weekCardW = math.floor((fw - 20) / 2) - 4
+    local weekCardH = 110
+    for i, q in ipairs(weeklies or {}) do
+        local cx = 4 + (i - 1) * (weekCardW + 8)
+        QuestCard(content, cx, cy, weekCardW, weekCardH, q, wProg[i] or 0, q.count, wComp[i], q.reward, true)
+    end
+    cy = cy + weekCardH + 20
+
+    -- Stats strip
+    local statsPanel = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    statsPanel:SetSize(fw - 8, 36); statsPanel:SetPoint("TOPLEFT", 4, -cy)
+    statsPanel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    statsPanel:SetBackdropColor(t.bgAlt[1], t.bgAlt[2], t.bgAlt[3], 0.5)
+    statsPanel:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.2)
+
+    local qData = Deadpool.db.quests or {}
+    local statLabels = {
+        { "Dailies Completed:", qData.totalDailiesCompleted or 0 },
+        { "Weeklies Completed:", qData.totalWeekliesCompleted or 0 },
+    }
+    for i, s in ipairs(statLabels) do
+        local lbl = statsPanel:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(11, "")); lbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+        lbl:SetPoint("LEFT", statsPanel, "LEFT", 14 + (i-1) * 220, 0)
+        lbl:SetText(s[1])
+        local val = statsPanel:CreateFontString(nil, "OVERLAY")
+        val:SetFont(TM:GetFont(11, "OUTLINE")); val:SetPoint("LEFT", lbl, "RIGHT", 6, 0)
+        val:SetText(Deadpool.colors.yellow .. s[2] .. "|r")
+    end
+    cy = cy + 52
+
+    content:SetHeight(cy)
+
+    local dailyDone = 0
+    for i = 1, 3 do if dComp[i] then dailyDone = dailyDone + 1 end end
+    local weeklyDone = 0
+    for i = 1, 2 do if wComp[i] then weeklyDone = weeklyDone + 1 end end
+    statusText:SetText("Dailies: " .. dailyDone .. "/3 | Weeklies: " .. weeklyDone .. "/2")
+end
+
+----------------------------------------------------------------------
+-- Achievements Panel (dedicated scrollable panel, retail-style)
+----------------------------------------------------------------------
+function UI:ShowAchievementsPanel()
+    if UI.achievementsPanel then
+        UI.achievementsPanel:Hide()
+        UI.achievementsPanel:SetParent(nil)
+        UI.achievementsPanel = nil
+    end
+    local ok, err = pcall(function() UI:BuildAchievementsPanel() end)
+    if not ok then
+        Deadpool:Print(Deadpool.colors.red .. "Achievement panel error: " .. tostring(err) .. "|r")
+    end
+    if UI.achievementsPanel then UI.achievementsPanel:Show() end
+end
+
+function UI:BuildAchievementsPanel()
+    local TM = Deadpool.modules.Theme
+    local t = TM.active
+    local AM = Deadpool.modules.Achievements
+    local accentHex = TM:AccentHex()
+
+    local panel = CreateFrame("Frame", nil, mainFrame)
+    panel:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
+    panel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 28)
+    panel:Hide()
+    UI.achievementsPanel = panel
+
+    if not AM then
+        local msg = panel:CreateFontString(nil, "OVERLAY")
+        msg:SetFont(TM:GetFont(14, "")); msg:SetPoint("TOPLEFT", 20, -20)
+        msg:SetText("Achievement module not loaded."); msg:SetTextColor(1,0.3,0.3)
+        statusText:SetText("Achievements"); return
+    end
+
+    -- Summary bar at top
+    local earned = AM:GetEarnedCount()
+    local total = AM:GetTotalCount()
+    local achPts = AM:GetTotalPoints()
+
+    local summaryBar = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+    summaryBar:SetHeight(40); summaryBar:SetPoint("TOPLEFT", 0, 0); summaryBar:SetPoint("TOPRIGHT", 0, 0)
+    summaryBar:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    summaryBar:SetBackdropColor(t.accent[1]*0.1, t.accent[2]*0.1, t.accent[3]*0.1, 0.9)
+    summaryBar:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.4)
+
+    local sumTitle = summaryBar:CreateFontString(nil, "OVERLAY")
+    sumTitle:SetFont(TM:GetFont(14, "OUTLINE")); sumTitle:SetPoint("LEFT", 14, 4)
+    sumTitle:SetText(accentHex .. "ACHIEVEMENTS|r")
+
+    local sumCount = summaryBar:CreateFontString(nil, "OVERLAY")
+    sumCount:SetFont(TM:GetFont(12, "")); sumCount:SetPoint("LEFT", 14, -10)
+    sumCount:SetText(Deadpool.colors.green .. earned .. "|r" .. Deadpool.colors.grey .. " / " .. total .. "|r")
+
+    local sumPts = summaryBar:CreateFontString(nil, "OVERLAY")
+    sumPts:SetFont(TM:GetFont(16, "OUTLINE")); sumPts:SetPoint("RIGHT", -14, 0)
+    sumPts:SetText(Deadpool.colors.gold .. achPts .. "|r")
+
+    local sumPtsLabel = summaryBar:CreateFontString(nil, "OVERLAY")
+    sumPtsLabel:SetFont(TM:GetFont(9, "")); sumPtsLabel:SetPoint("RIGHT", sumPts, "LEFT", -6, 0)
+    sumPtsLabel:SetText(Deadpool.colors.grey .. "Achievement Points" .. "|r")
+
+    -- Progress bar in summary
+    local sumBarBg = CreateFrame("Frame", nil, summaryBar, "BackdropTemplate")
+    sumBarBg:SetSize(200, 8); sumBarBg:SetPoint("LEFT", sumCount, "RIGHT", 14, 0)
+    sumBarBg:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    sumBarBg:SetBackdropColor(t.barBg[1], t.barBg[2], t.barBg[3], 0.8)
+    local sumBarFill = sumBarBg:CreateTexture(nil, "ARTWORK")
+    sumBarFill:SetPoint("TOPLEFT"); sumBarFill:SetPoint("BOTTOMLEFT")
+    sumBarFill:SetTexture("Interface\\Buttons\\WHITE8x8")
+    sumBarFill:SetWidth(math.max(1, 200 * (total > 0 and earned / total or 0)))
+    sumBarFill:SetVertexColor(t.accent[1], t.accent[2], t.accent[3], 1)
+
+    -- Scrollable content below summary
+    local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
+    scrollFrame:SetPoint("TOPLEFT", summaryBar, "BOTTOMLEFT", 0, -2)
+    scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -10, 0)
+    scrollFrame:EnableMouseWheel(true)
+
+    local scrollBar = CreateFrame("Slider", nil, panel, "BackdropTemplate")
+    scrollBar:SetWidth(8); scrollBar:SetPoint("TOPRIGHT", 0, -42); scrollBar:SetPoint("BOTTOMRIGHT", 0, 0)
+    scrollBar:SetOrientation("VERTICAL"); scrollBar:SetMinMaxValues(0, 1); scrollBar:SetValue(0)
+    scrollBar:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    scrollBar:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.3)
+    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
+    thumb:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.5)
+    thumb:SetSize(8, 40); scrollBar:SetThumbTexture(thumb)
+
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local cur = self:GetVerticalScroll()
+        local max = math.max(0, (self:GetScrollChild():GetHeight() or 0) - self:GetHeight())
+        local newVal = math.max(0, math.min(max, cur - delta * 30))
+        self:SetVerticalScroll(newVal); scrollBar:SetValue(newVal)
+    end)
+    scrollBar:SetScript("OnValueChanged", function(self, val) scrollFrame:SetVerticalScroll(val) end)
+
+    -- Content child: MUST have explicit size before SetScrollChild
+    local contentW = FRAME_WIDTH - 42
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetSize(contentW, 2000)  -- tall enough for all achievements
+    scrollFrame:SetScrollChild(content)
+
+    local data = AM:GetAllForDisplay()
+    local cy = 4
+    local fw = contentW - 4
+    local achH = 42
+
+    for _, entry in ipairs(data) do
+        if entry.isHeader then
+            -- Category header
+            local hdr = CreateFrame("Frame", nil, content, "BackdropTemplate")
+            hdr:SetSize(fw, 24); hdr:SetPoint("TOPLEFT", 0, -cy)
+            hdr:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+            hdr:SetBackdropColor(t.accent[1]*0.12, t.accent[2]*0.12, t.accent[3]*0.12, 0.95)
+            local hdrText = hdr:CreateFontString(nil, "OVERLAY")
+            hdrText:SetFont(TM:GetFont(11, "OUTLINE")); hdrText:SetPoint("LEFT", 10, 0)
+            hdrText:SetText(accentHex .. entry.category .. "|r")
+            cy = cy + 26
+        else
+            local tile = CreateFrame("Frame", nil, content, "BackdropTemplate")
+            tile:SetSize(fw, achH); tile:SetPoint("TOPLEFT", 0, -cy)
+            tile:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+            })
+
+            if entry.earned then
+                tile:SetBackdropColor(t.accent[1]*0.08, t.accent[2]*0.08 + 0.03, t.accent[3]*0.08, 0.9)
+                tile:SetBackdropBorderColor(t.gold[1]*0.5, t.gold[2]*0.5, t.gold[3]*0.2, 0.5)
+            else
+                tile:SetBackdropColor(t.bgAlt[1]*0.7, t.bgAlt[2]*0.7, t.bgAlt[3]*0.7, 0.4)
+                tile:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.15)
+            end
+
+            -- Left edge indicator
+            local edge = tile:CreateTexture(nil, "ARTWORK")
+            edge:SetSize(3, achH); edge:SetPoint("LEFT", 0, 0)
+            if entry.earned then
+                edge:SetColorTexture(t.gold[1], t.gold[2], t.gold[3], 0.8)
+            elseif entry.progress > 0 then
+                edge:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.5)
+            else
+                edge:SetColorTexture(0.2, 0.2, 0.2, 0.3)
+            end
+
+            -- Achievement icon (real WoW texture per category)
+            local ACH_CATEGORY_ICONS = {
+                MILESTONES  = "Interface\\Icons\\Ability_Creature_Cursed_03",
+                ["KILL COUNT"] = "Interface\\Icons\\INV_Axe_03",
+                STREAKS     = "Interface\\Icons\\Spell_Fire_Incinerate",
+                CLASS       = "Interface\\Icons\\Spell_Nature_WispSplode",
+                BOUNTY      = "Interface\\Icons\\INV_Misc_Coin_02",
+                KOS         = "Interface\\Icons\\Ability_Rogue_MasterOfSubtlety",
+                ZONES       = "Interface\\Icons\\INV_Misc_Map_01",
+                REVENGE     = "Interface\\Icons\\Ability_Warrior_Revenge",
+                QUESTS      = "Interface\\Icons\\INV_Scroll_03",
+                UNDERDOG    = "Interface\\Icons\\Ability_Warrior_StrengthOfArms",
+                DEDICATION  = "Interface\\Icons\\INV_Misc_PocketWatch_01",
+            }
+
+            local iconTex = tile:CreateTexture(nil, "ARTWORK")
+            iconTex:SetSize(28, 28); iconTex:SetPoint("LEFT", 8, 0)
+            iconTex:SetTexture(ACH_CATEGORY_ICONS[entry.category] or "Interface\\Icons\\INV_Misc_QuestionMark")
+            iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+
+            -- Icon border (gold for earned, grey for locked)
+            if entry.earned then
+                iconTex:SetDesaturated(false)
+                iconTex:SetAlpha(1)
+                -- Gold earned check overlay
+                local check = tile:CreateTexture(nil, "OVERLAY")
+                check:SetSize(14, 14); check:SetPoint("BOTTOMRIGHT", iconTex, "BOTTOMRIGHT", 2, -2)
+                check:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
+            elseif entry.progress > 0 then
+                iconTex:SetDesaturated(false)
+                iconTex:SetAlpha(0.75)
+            else
+                iconTex:SetDesaturated(true)
+                iconTex:SetAlpha(0.35)
+            end
+
+            -- Name
+            local name = tile:CreateFontString(nil, "OVERLAY")
+            name:SetFont(TM:GetFont(12, entry.earned and "OUTLINE" or "")); name:SetPoint("TOPLEFT", 44, -5)
+            name:SetWidth(300)
+            if entry.earned then
+                name:SetText(Deadpool.colors.gold .. entry.name .. "|r")
+            else
+                name:SetText("|cFFDDDDDD" .. entry.name .. "|r")
+            end
+
+            -- Description (includes point reward)
+            local desc = tile:CreateFontString(nil, "OVERLAY")
+            desc:SetFont(TM:GetFont(10, "")); desc:SetPoint("TOPLEFT", 44, -21)
+            desc:SetWidth(350)
+            desc:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+            local rewardColor = entry.earned and Deadpool.colors.gold or Deadpool.colors.grey
+            desc:SetText(entry.desc .. "  " .. rewardColor .. "(" .. entry.points .. " pts)|r")
+
+            -- Progress bar (inline, right of desc)
+            local barW = 160
+            local barBg = CreateFrame("Frame", nil, tile, "BackdropTemplate")
+            barBg:SetSize(barW, 10); barBg:SetPoint("RIGHT", tile, "RIGHT", -120, 0)
+            barBg:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+            barBg:SetBackdropColor(t.barBg[1], t.barBg[2], t.barBg[3], 0.8)
+
+            local barFill = barBg:CreateTexture(nil, "ARTWORK")
+            barFill:SetPoint("TOPLEFT"); barFill:SetPoint("BOTTOMLEFT")
+            barFill:SetTexture("Interface\\Buttons\\WHITE8x8")
+            local pct = entry.goal > 0 and math.min(entry.progress / entry.goal, 1) or 0
+            barFill:SetWidth(math.max(1, barW * pct))
+            if entry.earned then
+                barFill:SetVertexColor(t.gold[1], t.gold[2], t.gold[3], 1)
+            else
+                barFill:SetVertexColor(t.accent[1], t.accent[2], t.accent[3], 0.8)
+            end
+
+            local barLabel = barBg:CreateFontString(nil, "OVERLAY")
+            barLabel:SetFont(TM:GetFont(8, "OUTLINE")); barLabel:SetPoint("CENTER")
+            barLabel:SetText(entry.progress .. "/" .. entry.goal)
+            barLabel:SetShadowOffset(1, -1); barLabel:SetShadowColor(0, 0, 0, 1)
+
+            -- Points badge (far right — gold if earned, grey if not)
+            local ptsBadge = tile:CreateFontString(nil, "OVERLAY")
+            ptsBadge:SetFont(TM:GetFont(12, "OUTLINE")); ptsBadge:SetPoint("RIGHT", -14, 4)
+            if entry.earned then
+                ptsBadge:SetText(Deadpool.colors.gold .. entry.points .. "|r")
+            else
+                ptsBadge:SetText("|cFF555555" .. entry.points .. "|r")
+            end
+
+            local ptsLabel = tile:CreateFontString(nil, "OVERLAY")
+            ptsLabel:SetFont(TM:GetFont(8, "")); ptsLabel:SetPoint("TOP", ptsBadge, "BOTTOM", 0, -1)
+            if entry.earned then
+                ptsLabel:SetText(Deadpool.colors.gold .. "pts|r")
+            else
+                ptsLabel:SetText("|cFF555555pts|r")
+            end
+
+            -- Earned date tooltip + click handlers
+            tile:EnableMouse(true)
+            tile._achEntry = entry
+
+            tile:SetScript("OnMouseUp", function(self, button)
+                local e = self._achEntry
+                if not e then return end
+                if button == "LeftButton" and IsShiftKeyDown() then
+                    -- Shift-click: insert achievement link into chat
+                    local AM = Deadpool.modules.Achievements
+                    if AM and AM.InsertLink then AM:InsertLink(e.id) end
+                elseif button == "LeftButton" then
+                    -- Regular click: show achievement popup
+                    local AM = Deadpool.modules.Achievements
+                    if AM and AM.ShowPopup then AM:ShowPopup(e.id) end
+                end
+            end)
+
+            tile:SetScript("OnEnter", function(self)
+                local e = self._achEntry
+                if not e then return end
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:AddLine(e.name, 1, 0.84, 0)
+                GameTooltip:AddLine(e.desc, 0.7, 0.7, 0.7)
+                if e.earned and e.earnedAt then
+                    GameTooltip:AddLine("Earned: " .. Deadpool:FormatDate(e.earnedAt), 0.5, 1, 0.5)
+                end
+                GameTooltip:AddLine("+" .. e.points .. " achievement points", 1, 1, 0)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Click to preview", 0.5, 0.5, 0.5)
+                GameTooltip:AddLine("Shift-click to link in chat", 0.5, 0.5, 0.5)
+                GameTooltip:Show()
+            end)
+            tile:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            cy = cy + achH + 2
+        end
+    end
+
+    content:SetHeight(cy + 20)
+
+    -- Update scrollbar range
+    C_Timer.After(0.05, function()
+        if scrollFrame and scrollBar then
+            local frameH = scrollFrame:GetHeight() or 0
+            local maxScroll = math.max(0, (cy + 20) - frameH)
+            scrollBar:SetMinMaxValues(0, maxScroll)
+            scrollBar:SetValue(0)
+        end
+    end)
+
+    statusText:SetText(earned .. "/" .. total .. " achievements | " .. Deadpool.colors.gold .. achPts .. "|r achievement points")
 end
 
 ----------------------------------------------------------------------
@@ -1487,7 +2079,8 @@ function UI:BuildSettingsPanel()
     Check("Announce kills in chat", "announceKills", 0, ly); ly = ly - 26
     Check("KOS sighting alerts", "announceKOSSighted", 0, ly); ly = ly - 26
     Check("Alert sound on KOS spotted", "alertSound", 0, ly); ly = ly - 26
-    Check("Broadcast sightings to guild", "broadcastSightings", 0, ly); ly = ly - 34
+    Check("Broadcast sightings to guild", "broadcastSightings", 0, ly); ly = ly - 26
+    Check("Suppress alerts in sanctuary (Shatt)", "suppressInSanctuary", 0, ly); ly = ly - 34
 
     -- ALERTS
     Header("ALERT FRAME", 0, ly); ly = ly - 24
@@ -1919,10 +2512,12 @@ function UI:BuildSettingsPanel()
     Header("DEBUG", COL2, ry); ry = ry - 24
     Check("Debug mode", "debug", COL2, ry); ry = ry - 34
 
-    -- GM TOOLS
-    if isGM then
-        Header("GM TOOLS", COL2, ry); ry = ry - 26
+    -- GM TOOLS (GM gets all buttons; Officers get KOS purge only)
+    local isOfficer = Deadpool:IsOfficer()
+    if isGM or isOfficer then
+        Header(isGM and "GM TOOLS" or "OFFICER TOOLS", COL2, ry); ry = ry - 26
 
+      if isGM then
         local wipeScoreBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
         wipeScoreBtn:SetSize(160, 20)
         wipeScoreBtn:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
@@ -1960,6 +2555,54 @@ function UI:BuildSettingsPanel()
         end)
         wipeKillsBtn:SetScript("OnClick", function()
             StaticPopup_Show("DEADPOOL_WIPE_KILLLOG")
+        end)
+        ry = ry - 26
+      end  -- end isGM-only buttons
+
+        -- Purge KOS List button (GM/Officer)
+        local wipeKOSBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        wipeKOSBtn:SetSize(160, 20)
+        wipeKOSBtn:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        wipeKOSBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        wipeKOSBtn:SetBackdropColor(0.5, 0.05, 0.05, 0.9)
+        wipeKOSBtn:SetBackdropBorderColor(0.8, 0.1, 0.1, 0.6)
+        local wipeKOSLbl = wipeKOSBtn:CreateFontString(nil, "OVERLAY")
+        wipeKOSLbl:SetFont(TM:GetFont(10, "")); wipeKOSLbl:SetPoint("CENTER")
+        wipeKOSLbl:SetText(Deadpool.colors.red .. "Purge KOS List|r")
+        wipeKOSBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.7, 0.1, 0.1, 1)
+        end)
+        wipeKOSBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(0.5, 0.05, 0.05, 0.9)
+        end)
+        wipeKOSBtn:SetScript("OnClick", function()
+            StaticPopup_Show("DEADPOOL_PURGE_KOS")
+        end)
+        ry = ry - 26
+    end
+
+    -- Remove My KOS Entries button (available to everyone)
+    if not isGM and not isOfficer then
+        Header("MY DATA", COL2, ry); ry = ry - 26
+    end
+    do
+        local myKOSBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        myKOSBtn:SetSize(160, 20)
+        myKOSBtn:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
+        myKOSBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        myKOSBtn:SetBackdropColor(0.4, 0.2, 0.05, 0.9)
+        myKOSBtn:SetBackdropBorderColor(0.6, 0.3, 0.1, 0.6)
+        local myKOSLbl = myKOSBtn:CreateFontString(nil, "OVERLAY")
+        myKOSLbl:SetFont(TM:GetFont(10, "")); myKOSLbl:SetPoint("CENTER")
+        myKOSLbl:SetText(Deadpool.colors.yellow .. "Remove My KOS Entries|r")
+        myKOSBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(0.6, 0.3, 0.1, 1)
+        end)
+        myKOSBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(0.4, 0.2, 0.05, 0.9)
+        end)
+        myKOSBtn:SetScript("OnClick", function()
+            StaticPopup_Show("DEADPOOL_PURGE_MY_KOS")
         end)
         ry = ry - 26
     end
@@ -2004,7 +2647,7 @@ function UI:UpdateSettingsValues()
     local isGM = Deadpool:IsGM()
     local isMgr = Deadpool:IsManager()
     local roleTag = isGM and (" | " .. Deadpool.colors.gold .. "GM|r") or (isMgr and (" | " .. Deadpool.colors.cyan .. "Manager|r") or "")
-    statusText:SetText("Settings | " .. Deadpool.modules.Theme:GetThemeName() .. roleTag)
+    statusText:SetText("Deadpool v" .. Deadpool.version .. " by Evildz" .. roleTag)
 end
 
 ----------------------------------------------------------------------
@@ -2080,6 +2723,243 @@ function UI:ShowScalePopup()
     closeBtn:SetScript("OnClick", function() popup:Hide() end)
 
     UI._scalePopup = popup
+end
+
+----------------------------------------------------------------------
+-- Changelog popup
+----------------------------------------------------------------------
+function UI:ShowChangelog()
+    if UI._changelogPopup then
+        UI._changelogPopup:Show()
+        return
+    end
+
+    local TM = Deadpool.modules.Theme
+    local t = TM.active
+    local accentHex = TM:AccentHex()
+
+    local popup = CreateFrame("Frame", "DeadpoolChangelog", UIParent, "BackdropTemplate")
+    popup:SetSize(520, 480)
+    popup:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    popup:SetFrameStrata("DIALOG")
+    popup:SetMovable(true)
+    popup:EnableMouse(true)
+    popup:RegisterForDrag("LeftButton")
+    popup:SetScript("OnDragStart", popup.StartMoving)
+    popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
+    popup:SetClampedToScreen(true)
+    popup:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8",
+        edgeSize = 2,
+    })
+    popup:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.97)
+    popup:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.8)
+    tinsert(UISpecialFrames, "DeadpoolChangelog")
+
+    -- Title bar
+    local titleBg = popup:CreateTexture(nil, "ARTWORK")
+    titleBg:SetHeight(28)
+    titleBg:SetPoint("TOPLEFT", 2, -2)
+    titleBg:SetPoint("TOPRIGHT", -2, -2)
+    titleBg:SetColorTexture(t.accent[1] * 0.2, t.accent[2] * 0.2, t.accent[3] * 0.2, 0.95)
+
+    local title = popup:CreateFontString(nil, "OVERLAY")
+    title:SetFont(TM:GetFont(14, "OUTLINE"))
+    title:SetPoint("LEFT", titleBg, "LEFT", 10, 0)
+    title:SetText(accentHex .. "DEADPOOL CHANGELOG|r")
+
+    local closeBtn = CreateFrame("Button", nil, popup)
+    closeBtn:SetSize(20, 20); closeBtn:SetPoint("TOPRIGHT", -6, -6)
+    local xText = closeBtn:CreateFontString(nil, "OVERLAY")
+    xText:SetFont("Fonts\\FRIZQT__.TTF", 14, "OUTLINE"); xText:SetPoint("CENTER")
+    xText:SetText("X"); xText:SetTextColor(0.8, 0.2, 0.2)
+    closeBtn:SetScript("OnClick", function() popup:Hide() end)
+    closeBtn:SetScript("OnEnter", function() xText:SetTextColor(1, 0.4, 0.4) end)
+    closeBtn:SetScript("OnLeave", function() xText:SetTextColor(0.8, 0.2, 0.2) end)
+
+    -- Scroll frame for changelog content
+    local scrollFrame = CreateFrame("ScrollFrame", nil, popup)
+    scrollFrame:SetPoint("TOPLEFT", 10, -34)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -12, 40)
+    scrollFrame:EnableMouseWheel(true)
+
+    local scrollBar = CreateFrame("Slider", nil, popup, "BackdropTemplate")
+    scrollBar:SetWidth(6); scrollBar:SetPoint("TOPRIGHT", -4, -34); scrollBar:SetPoint("BOTTOMRIGHT", -4, 40)
+    scrollBar:SetOrientation("VERTICAL"); scrollBar:SetMinMaxValues(0, 1); scrollBar:SetValue(0)
+    scrollBar:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    scrollBar:SetBackdropColor(0, 0, 0, 0.3)
+    local thumb = scrollBar:CreateTexture(nil, "OVERLAY")
+    thumb:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.5)
+    thumb:SetSize(6, 30); scrollBar:SetThumbTexture(thumb)
+    scrollFrame:SetScript("OnMouseWheel", function(self, delta)
+        local cur = self:GetVerticalScroll()
+        local max = math.max(0, (self:GetScrollChild():GetHeight() or 0) - self:GetHeight())
+        local newVal = math.max(0, math.min(max, cur - delta * 30))
+        self:SetVerticalScroll(newVal); scrollBar:SetValue(newVal)
+    end)
+    scrollBar:SetScript("OnValueChanged", function(self, val) scrollFrame:SetVerticalScroll(val) end)
+
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetSize(480, 2000)
+    scrollFrame:SetScrollChild(content)
+
+    -- Changelog text
+    local changelog = content:CreateFontString(nil, "OVERLAY")
+    changelog:SetFont(TM:GetFont(11, ""))
+    changelog:SetPoint("TOPLEFT", 4, -4)
+    changelog:SetWidth(470)
+    changelog:SetJustifyH("LEFT")
+    changelog:SetSpacing(3)
+    changelog:SetTextColor(t.text[1], t.text[2], t.text[3])
+
+    local text = accentHex .. "v1.5.0|r " .. Deadpool.colors.grey .. "(April 2026)|r\n" ..
+        Deadpool.colors.gold .. "MAJOR UPDATE — Quests, Achievements & Sync Overhaul|r\n\n" ..
+
+        accentHex .. "NEW: PvP Quests|r\n" ..
+        "  \226\128\162 3 Daily quests + 2 Weekly quests, auto-generated\n" ..
+        "  \226\128\162 Class kills, race kills, zone kills, streaks, KOS hunts\n" ..
+        "  \226\128\162 Faction-aware — targets match your enemy faction\n" ..
+        "  \226\128\162 Same quests for entire guild (deterministic seed)\n" ..
+        "  \226\128\162 Zero sync overhead — quests generated locally\n" ..
+        "  \226\128\162 Point rewards: 25-50 daily, 150-200 weekly\n\n" ..
+
+        accentHex .. "NEW: Achievement System|r\n" ..
+        "  \226\128\162 60+ PvP achievements across 11 categories\n" ..
+        "  \226\128\162 Milestones, Kill Count, Streaks, Class Mastery\n" ..
+        "  \226\128\162 Zone achievements — kill in every Outland zone\n" ..
+        "  \226\128\162 Revenge, Bounty, KOS, Underdog, Dedication\n" ..
+        "  \226\128\162 Achievement points feed into leaderboard\n" ..
+        "  \226\128\162 Account-wide with backup/restore (/dp restore)\n" ..
+        "  \226\128\162 Click to preview, shift-click to link in chat\n" ..
+        "  \226\128\162 Real WoW ability icons per category\n\n" ..
+
+        accentHex .. "NEW: Assist Points|r\n" ..
+        "  \226\128\162 75% points for party/raid members who help kill\n" ..
+        "  \226\128\162 Tracks who damaged each enemy player\n" ..
+        "  \226\128\162 Assist count shown in My Stats\n\n" ..
+
+        accentHex .. "NEW: Highest Crit Tracking|r\n" ..
+        "  \226\128\162 Records your biggest crit on enemy players\n" ..
+        "  \226\128\162 Shows victim name + date in My Stats\n\n" ..
+
+        accentHex .. "IMPROVED: Sync Protocol|r\n" ..
+        "  \226\128\162 Outbound message queue — no more disconnects\n" ..
+        "  \226\128\162 1 message/second pacing with priority queue\n" ..
+        "  \226\128\162 Compressed message codes (5-7 bytes saved per msg)\n" ..
+        "  \226\128\162 Backward compatible — receives old format\n" ..
+        "  \226\128\162 Bulk packing: 8-10 records per message\n" ..
+        "  \226\128\162 Login sync only fires once (not on zone changes)\n" ..
+        "  \226\128\162 GM config broadcast throttled (30s cooldown)\n\n" ..
+
+        accentHex .. "IMPROVED: Data Isolation|r\n" ..
+        "  \226\128\162 Per-character SavedVariables — no cross-guild bleed\n" ..
+        "  \226\128\162 Guild identity check — wipes on guild change\n" ..
+        "  \226\128\162 Migration from old account-wide format\n\n" ..
+
+        accentHex .. "IMPROVED: KOS Management|r\n" ..
+        "  \226\128\162 GM/Officer: Purge KOS List button in settings\n" ..
+        "  \226\128\162 All users: Remove My KOS Entries button\n" ..
+        "  \226\128\162 Bounty targets protected from purge\n" ..
+        "  \226\128\162 Auto-evict oldest entry when list full\n" ..
+        "  \226\128\162 Stale entries excluded from sync (14 day window)\n\n" ..
+
+        accentHex .. "IMPROVED: Alerts|r\n" ..
+        "  \226\128\162 Sanctuary suppression (Shattrath, etc)\n" ..
+        "  \226\128\162 Unified KOS alert — one notification per target\n" ..
+        "  \226\128\162 60-second dedup across local + guild alerts\n\n" ..
+
+        accentHex .. "FIXED|r\n" ..
+        "  \226\128\162 Data wipe on login bug (v1.2.0)\n" ..
+        "  \226\128\162 Duplicate sighting notifications\n" ..
+        "  \226\128\162 Cross-guild data contamination\n" ..
+        "  \226\128\162 Disconnect from sync message floods\n\n" ..
+
+        Deadpool.colors.cyan .. "Feedback & bugs:|r Click below to copy the link\n" ..
+        "Thank you for using Deadpool!|r"
+
+    changelog:SetText(text)
+    local textHeight = changelog:GetStringHeight() or 800
+    content:SetHeight(textHeight + 20)
+
+    C_Timer.After(0.05, function()
+        local frameH = scrollFrame:GetHeight() or 0
+        local maxScroll = math.max(0, (textHeight + 20) - frameH)
+        scrollBar:SetMinMaxValues(0, maxScroll)
+    end)
+
+    -- GitHub link button (copyable)
+    local linkBtn = CreateFrame("Button", nil, popup, "BackdropTemplate")
+    linkBtn:SetSize(260, 22)
+    linkBtn:SetPoint("BOTTOMLEFT", popup, "BOTTOMLEFT", 10, 8)
+    linkBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1,
+    })
+    linkBtn:SetBackdropColor(t.accent[1]*0.2, t.accent[2]*0.2, t.accent[3]*0.2, 0.9)
+    linkBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.5)
+    local linkLabel = linkBtn:CreateFontString(nil, "OVERLAY")
+    linkLabel:SetFont(TM:GetFont(10, "")); linkLabel:SetPoint("CENTER")
+    linkLabel:SetText(Deadpool.colors.cyan .. "github.com/greenovate/Deadpool|r")
+    linkBtn:SetScript("OnEnter", function(self)
+        self:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 1)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Click to copy link", 0.7, 0.7, 0.7)
+        GameTooltip:Show()
+    end)
+    linkBtn:SetScript("OnLeave", function(self)
+        self:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.5)
+        GameTooltip:Hide()
+    end)
+    linkBtn:SetScript("OnClick", function()
+        -- Show a copyable edit box popup
+        if not UI._linkPopup then
+            local lp = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+            lp:SetSize(340, 60)
+            lp:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+            lp:SetFrameStrata("TOOLTIP")
+            lp:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2,
+            })
+            lp:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.98)
+            lp:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.8)
+
+            local lpTitle = lp:CreateFontString(nil, "OVERLAY")
+            lpTitle:SetFont(TM:GetFont(10, "OUTLINE")); lpTitle:SetPoint("TOP", 0, -8)
+            lpTitle:SetText(accentHex .. "Ctrl+C to copy|r")
+
+            local lpClose = CreateFrame("Button", nil, lp)
+            lpClose:SetSize(16, 16); lpClose:SetPoint("TOPRIGHT", -4, -4)
+            local lpX = lpClose:CreateFontString(nil, "OVERLAY")
+            lpX:SetFont("Fonts\\FRIZQT__.TTF", 12, "OUTLINE"); lpX:SetPoint("CENTER")
+            lpX:SetText("X"); lpX:SetTextColor(0.8, 0.2, 0.2)
+            lpClose:SetScript("OnClick", function() lp:Hide() end)
+
+            local lpEdit = CreateFrame("EditBox", nil, lp, "InputBoxTemplate")
+            lpEdit:SetSize(300, 20); lpEdit:SetPoint("BOTTOM", 0, 10)
+            lpEdit:SetAutoFocus(true); lpEdit:SetMaxLetters(100)
+            lpEdit:SetText("https://github.com/greenovate/Deadpool")
+            lpEdit:HighlightText()
+            lpEdit:SetScript("OnEscapePressed", function() lp:Hide() end)
+            lpEdit:SetScript("OnEditFocusLost", function() lp:Hide() end)
+
+            UI._linkPopup = lp
+            UI._linkEdit = lpEdit
+        else
+            UI._linkEdit:SetText("https://github.com/greenovate/Deadpool")
+            UI._linkEdit:HighlightText()
+            UI._linkPopup:Show()
+        end
+    end)
+
+    -- Version footer (right side)
+    local footer = popup:CreateFontString(nil, "OVERLAY")
+    footer:SetFont(TM:GetFont(10, ""))
+    footer:SetPoint("BOTTOMRIGHT", popup, "BOTTOMRIGHT", -10, 14)
+    footer:SetText(Deadpool.colors.grey .. "v" .. Deadpool.version .. " by Evildz|r")
+
+    UI._changelogPopup = popup
 end
 
 ----------------------------------------------------------------------

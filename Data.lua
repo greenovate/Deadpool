@@ -17,6 +17,7 @@ local DEFAULTS = {
         alertSound = true,
         autoKOSOnAttack = true,
         broadcastSightings = true,
+        suppressInSanctuary = true,  -- suppress local KOS alerts in sanctuary zones (Shatt, etc)
         pointsPerKill = 5,
         pointsPerKOSKill = 25,
         pointsPerBountyKill = 100,
@@ -54,7 +55,9 @@ local DEFAULTS = {
         warGuilds = {},                    -- ["Guild Name"] = true, guild-wide war declarations
         scoreboardResetAt = 0,             -- timestamp of last scoreboard reset
         killLogResetAt = 0,                -- timestamp of last kill log reset
+        kosResetAt = 0,                    -- timestamp of last KOS list purge
         maxKOSEntries = 100,               -- max KOS list size
+        kosExpireDays = 14,                -- auto-expire KOS entries after this many days (0 = never)
         updatedBy = "",
         updatedAt = 0,                     -- unix timestamp, latest wins
     },
@@ -63,13 +66,15 @@ local DEFAULTS = {
 }
 
 function Deadpool:InitDB()
-    if not DeadpoolDB then
-        DeadpoolDB = {}
+    -- Per-character saved data (primary store)
+    if not DeadpoolCharDB then
+        DeadpoolCharDB = {}
     end
+    self:MergeDefaults(DeadpoolCharDB, DEFAULTS)
+    self.db = DeadpoolCharDB
 
-    -- Merge defaults into saved data (preserves existing values)
-    self:MergeDefaults(DeadpoolDB, DEFAULTS)
-    self.db = DeadpoolDB
+    -- Migrate from old account-wide DeadpoolDB if this character hasn't been migrated
+    self:MigrateFromAccountDB()
 end
 
 function Deadpool:MergeDefaults(target, defaults)
@@ -84,6 +89,164 @@ function Deadpool:MergeDefaults(target, defaults)
         elseif type(v) == "table" and type(target[k]) == "table" then
             self:MergeDefaults(target[k], v)
         end
+    end
+end
+
+----------------------------------------------------------------------
+-- Guild identity: detect guild changes and wipe stale data
+-- Prevents contamination when a player leaves one guild and joins
+-- another. On guild change, local guild data is wiped and the addon
+-- re-syncs fresh from the new guild.
+--
+-- CRITICAL: This must NEVER run before guild info is available from
+-- the server. GetGuildInfo() and IsInGuild() return nil/false during
+-- early loading (ADDON_LOADED). Only call after PLAYER_ENTERING_WORLD
+-- with a delay.
+----------------------------------------------------------------------
+function Deadpool:CheckGuildIdentity()
+    local guildName = GetGuildInfo("player")
+
+    -- If guild info isn't available yet, do nothing and retry later.
+    -- NEVER make wipe decisions without confirmed guild data.
+    if not guildName or guildName == "" then
+        if not IsInGuild() then
+            -- Confirmed not in a guild (not just loading).
+            -- But only wipe if we had a guild AND we can confirm we truly
+            -- have no guild (double-check with GetNumGuildMembers).
+            local numMembers = GetNumGuildMembers()
+            if numMembers == 0 and self.db._guildName and self.db._guildName ~= "" then
+                self:WipeGuildData("left guild")
+                self.db._guildName = ""
+            end
+        end
+        -- If IsInGuild() is true but GetGuildInfo returned nil, guild info
+        -- is still loading. Do NOT wipe. Schedule a retry.
+        if IsInGuild() then
+            C_Timer.After(3, function()
+                Deadpool:CheckGuildIdentity()
+            end)
+        end
+        return false
+    end
+
+    local realm = GetRealmName() or "Unknown"
+    local currentKey = guildName .. "-" .. realm
+
+    -- First time setting guild (fresh install or migration) — just record it
+    if not self.db._guildName or self.db._guildName == "" then
+        self.db._guildName = currentKey
+        return true
+    end
+
+    -- Guild changed: confirmed positive mismatch (both old and new are real)
+    if self.db._guildName ~= currentKey then
+        self:WipeGuildData("guild changed from " .. self.db._guildName .. " to " .. currentKey)
+        self.db._guildName = currentKey
+    end
+
+    return true
+end
+
+function Deadpool:WipeGuildData(reason)
+    local guildTables = {
+        "kosList", "bounties", "killLog", "deathLog",
+        "enemySheet", "scoreboard", "guildConfig",
+    }
+    for _, key in ipairs(guildTables) do
+        if type(DEFAULTS[key]) == "table" then
+            self.db[key] = {}
+            self:MergeDefaults(self.db[key], DEFAULTS[key])
+        else
+            self.db[key] = DEFAULTS[key]
+        end
+    end
+    self.db.syncVersion = 0
+    self.db.lastSync = 0
+    self:Print(self.colors.yellow .. "Guild data reset (" .. reason .. "). Syncing fresh...|r")
+end
+
+----------------------------------------------------------------------
+-- Migration: one-time move from old account-wide DeadpoolDB
+-- Copies data to this character's DeadpoolCharDB, then marks done.
+----------------------------------------------------------------------
+function Deadpool:MigrateFromAccountDB()
+    if self.db._migratedFromAccount then return end
+    if not DeadpoolDB then return end
+
+    -- Check for old flat-format data at top level
+    local oldDataKeys = {
+        "kosList", "bounties", "killLog", "deathLog",
+        "enemySheet", "scoreboard", "guildConfig",
+        "syncVersion", "lastSync",
+    }
+
+    -- Try old flat format first
+    local migrated = 0
+    for _, key in ipairs(oldDataKeys) do
+        if DeadpoolDB[key] ~= nil then
+            local src = DeadpoolDB[key]
+            if type(src) == "table" then
+                if type(self.db[key]) ~= "table" or not next(self.db[key]) then
+                    self.db[key] = src
+                    migrated = migrated + 1
+                end
+            else
+                self.db[key] = src
+                migrated = migrated + 1
+            end
+        end
+    end
+
+    -- Also try guild-keyed format (from the previous guild-bucket system)
+    if DeadpoolDB.guilds and next(DeadpoolDB.guilds) then
+        -- Find the bucket matching our current guild, or take the only one
+        local guildName = GetGuildInfo("player")
+        local realm = GetRealmName() or "Unknown"
+        local currentKey = guildName and (guildName .. "-" .. realm) or nil
+
+        local sourceKey = currentKey and DeadpoolDB.guilds[currentKey] and currentKey
+        if not sourceKey then
+            -- Take the first (and likely only) guild bucket
+            for k in pairs(DeadpoolDB.guilds) do
+                sourceKey = k
+                break
+            end
+        end
+
+        if sourceKey and DeadpoolDB.guilds[sourceKey] then
+            local bucket = DeadpoolDB.guilds[sourceKey]
+            for _, key in ipairs(oldDataKeys) do
+                if bucket[key] ~= nil then
+                    local src = bucket[key]
+                    if type(src) == "table" then
+                        if type(self.db[key]) ~= "table" or not next(self.db[key]) then
+                            self.db[key] = src
+                            migrated = migrated + 1
+                        end
+                    else
+                        self.db[key] = src
+                        migrated = migrated + 1
+                    end
+                end
+            end
+        end
+    end
+
+    -- Migrate settings
+    if DeadpoolDB.settings then
+        self:MergeDefaults(self.db.settings, DeadpoolDB.settings)
+        -- Copy existing values that differ from defaults
+        for k, v in pairs(DeadpoolDB.settings) do
+            if self.db.settings[k] == nil or (type(v) ~= "table") then
+                self.db.settings[k] = v
+            end
+        end
+    end
+
+    self.db._migratedFromAccount = true
+
+    if migrated > 0 then
+        self:Print(self.colors.green .. "Data migrated to per-character storage.|r")
     end
 end
 

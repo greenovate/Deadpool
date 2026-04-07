@@ -7,7 +7,73 @@ local BountyManager = {}
 Deadpool:RegisterModule("BountyManager", BountyManager)
 
 function BountyManager:Init()
-    -- Nothing special on init yet
+    -- No periodic tasks needed; KOS entries persist locally forever.
+    -- Only recently-active entries are synced (filtered in Sync.lua).
+end
+
+----------------------------------------------------------------------
+-- KOS Purge: GM/Officer can wipe the entire KOS list (preserves bounties)
+----------------------------------------------------------------------
+function Deadpool:PurgeKOSList()
+    if not self:IsGM() and not self:IsOfficer() then
+        self:Print(self.colors.red .. "Only GM or officers can purge the KOS list.|r")
+        return false
+    end
+
+    local removed = 0
+    local preserved = 0
+    for fullName in pairs(self.db.kosList) do
+        if self:HasActiveBounty(fullName) then
+            preserved = preserved + 1
+        else
+            self.db.kosList[fullName] = nil
+            removed = removed + 1
+        end
+    end
+
+    self.db.guildConfig.kosResetAt = time()
+    self:BumpSyncVersion()
+    self:BroadcastGMConfig()
+
+    local msg = self.colors.red .. "KOS list purged:|r " .. removed .. " entries removed"
+    if preserved > 0 then
+        msg = msg .. ", " .. self.colors.gold .. preserved .. " bounty targets preserved|r"
+    end
+    self:Print(msg)
+    if self.RefreshUI then self:RefreshUI() end
+    return true
+end
+
+----------------------------------------------------------------------
+-- User self-purge: remove only KOS entries YOU added (preserves bounties)
+----------------------------------------------------------------------
+function Deadpool:PurgeMyKOSEntries()
+    local myName = self:GetPlayerFullName()
+    local removed = 0
+    local preserved = 0
+    for fullName, entry in pairs(self.db.kosList) do
+        if entry.addedBy == myName then
+            if self:HasActiveBounty(fullName) then
+                preserved = preserved + 1
+            else
+                self.db.kosList[fullName] = nil
+                self:BroadcastKOSRemove(fullName)
+                removed = removed + 1
+            end
+        end
+    end
+
+    if removed > 0 then
+        self:BumpSyncVersion()
+    end
+
+    local msg = self.colors.yellow .. "Removed " .. removed .. " KOS entries you added|r"
+    if preserved > 0 then
+        msg = msg .. " (" .. self.colors.gold .. preserved .. " bounty targets kept|r)"
+    end
+    self:Print(msg)
+    if self.RefreshUI then self:RefreshUI() end
+    return removed
 end
 
 ----------------------------------------------------------------------
@@ -24,10 +90,29 @@ function Deadpool:AddToKOS(nameOrFullName, reason, silent)
     if not self.db.kosList[fullName] then
         local maxKOS = self.db.guildConfig.maxKOSEntries or 100
         if self:TableCount(self.db.kosList) >= maxKOS then
-            if not silent then
-                self:Print(self.colors.red .. "KOS list is full (" .. maxKOS .. " targets). Remove someone first.|r")
+            -- Auto-evict the oldest non-bounty entry to make room
+            local oldestName, oldestTime = nil, math.huge
+            for fn, entry in pairs(self.db.kosList) do
+                if not self:HasActiveBounty(fn) then
+                    local t = entry.addedDate or 0
+                    if t < oldestTime then
+                        oldestName = fn
+                        oldestTime = t
+                    end
+                end
             end
-            return false
+            if oldestName then
+                self.db.kosList[oldestName] = nil
+                if not silent then
+                    self:Print(self.colors.grey .. "Auto-removed oldest KOS entry: " .. self:ShortName(oldestName) .. "|r")
+                end
+            else
+                -- All entries have bounties, can't evict
+                if not silent then
+                    self:Print(self.colors.red .. "KOS list is full (" .. maxKOS .. ") and all entries have bounties.|r")
+                end
+                return false
+            end
         end
     end
 
@@ -88,6 +173,11 @@ function Deadpool:AddToKOS(nameOrFullName, reason, silent)
     -- Broadcast to guild
     self:BroadcastKOSAdd(fullName)
 
+    -- Notify achievements
+    if self.modules.Achievements and self.modules.Achievements.OnKOSAdded then
+        self.modules.Achievements:OnKOSAdded()
+    end
+
     -- Refresh UI if visible
     if self.RefreshUI then self:RefreshUI() end
 
@@ -110,11 +200,8 @@ function Deadpool:RemoveFromKOS(nameOrFullName, silent)
 
     self.db.kosList[fullName] = nil
 
-    -- Also expire any bounty
-    if self.db.bounties[fullName] and not self.db.bounties[fullName].expired then
-        self.db.bounties[fullName].expired = true
-        self.db.bounties[fullName].expiredReason = "KOS removed"
-    end
+    -- Do NOT expire bounties when removing from KOS
+    -- Bounties are independent contracts — removing from KOS doesn't cancel them
 
     self:BumpSyncVersion()
 
@@ -202,6 +289,11 @@ function Deadpool:PlaceBounty(nameOrFullName, amount, maxKills, bountyType)
 
     -- Broadcast
     self:BroadcastBountyAdd(fullName)
+
+    -- Notify achievements
+    if self.modules.Achievements and self.modules.Achievements.OnBountyPlaced then
+        self.modules.Achievements:OnBountyPlaced()
+    end
 
     if self.RefreshUI then self:RefreshUI() end
     return true
@@ -314,6 +406,10 @@ function Deadpool:ClaimBountyKill(targetFullName, killerFullName, zone)
         bounty.expiredReason = "Completed (" .. bounty.maxKills .. "/" .. bounty.maxKills .. " kills)"
         self:Print(self.colors.gold .. "CONTRACT COMPLETE|r — " ..
             self:ShortName(targetFullName) .. " bounty fulfilled!")
+        -- Notify achievements
+        if self.modules.Achievements and self.modules.Achievements.OnBountyCompleted then
+            self.modules.Achievements:OnBountyCompleted()
+        end
     else
         self:Print(self.colors.gold .. "BOUNTY KILL|r — " ..
             self:ShortName(targetFullName) .. " (" ..
@@ -498,6 +594,14 @@ function Deadpool:RecordKill(killerFullName, victimFullName, victimClass, victim
 
     -- Broadcast to guild
     self:BroadcastKill(killerFullName, victimFullName, victimClass, victimRace, victimLevel, zone)
+
+    -- Notify quest and achievement modules
+    if self.modules.Quests and self.modules.Quests.OnKill then
+        self.modules.Quests:OnKill(killerFullName, victimFullName, victimClass, victimRace, victimLevel, zone, killType)
+    end
+    if self.modules.Achievements and self.modules.Achievements.OnKill then
+        self.modules.Achievements:OnKill(killerFullName, victimFullName, victimClass, victimRace, victimLevel, zone, killType)
+    end
 
     -- Refresh UI
     if self.RefreshUI then self:RefreshUI() end

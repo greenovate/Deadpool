@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------
 
 Deadpool = {}
-Deadpool.version = "1.1.6"
+Deadpool.version = "1.5.0"
 Deadpool.prefix = "DEADPOOL"
 Deadpool.modules = {}
 
@@ -129,6 +129,13 @@ end
 
 function Deadpool:GetSubZone()
     return GetSubZoneText() or ""
+end
+
+function Deadpool:IsInSanctuary()
+    -- Returns true if the player is in a sanctuary zone (PvP disabled)
+    -- GetZonePVPInfo() returns "sanctuary" in cities like Shattrath
+    local pvpType = GetZonePVPInfo()
+    return pvpType == "sanctuary"
 end
 
 function Deadpool:TimeAgo(timestamp)
@@ -585,6 +592,14 @@ SlashCmdList["DEADPOOL"] = function(msg)
         Deadpool:ShowTab("killlog")
     elseif cmd == "sync" then
         Deadpool:RequestSync()
+    elseif cmd == "quests" then
+        Deadpool:ShowTab("quests")
+    elseif cmd == "achieve" or cmd == "achievements" then
+        Deadpool:ShowTab("achievements")
+    elseif cmd == "restore" then
+        if Deadpool.modules.Achievements then
+            Deadpool.modules.Achievements:Restore()
+        end
     elseif cmd == "help" then
         Deadpool:PrintHelp()
     elseif cmd == "diag" then
@@ -719,6 +734,18 @@ function Deadpool:Init()
         Deadpool:RefreshGuildRoster()
     end)
 
+    -- Guild identity check: ONLY run after guild info is confirmed available.
+    -- Do NOT call CheckGuildIdentity here — GetGuildInfo/IsInGuild are
+    -- unreliable at ADDON_LOADED time and will false-wipe all data.
+
+    -- On fresh login, guild info arrives after PLAYER_ENTERING_WORLD
+    self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+        C_Timer.After(3, function()
+            Deadpool:CheckGuildIdentity()
+            if Deadpool.RefreshUI then Deadpool:RefreshUI() end
+        end)
+    end)
+
     -- Clean scoreboard: remove any non-guild entries (from pre-fix cross-guild contamination)
     if IsInGuild() then
         C_Timer.After(10, function()
@@ -737,7 +764,7 @@ function Deadpool:Init()
     end
 
     -- Initialize modules in dependency order (Theme before UI)
-    local initOrder = { "Theme", "BountyManager", "KillTracker", "Sync", "Nearby", "UI", "Alerts" }
+    local initOrder = { "Theme", "BountyManager", "KillTracker", "Quests", "Achievements", "Sync", "Nearby", "UI", "Alerts" }
     for _, name in ipairs(initOrder) do
         local mod = self.modules[name]
         if mod and mod.Init then

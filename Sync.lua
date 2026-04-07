@@ -7,31 +7,50 @@
 local Sync = {}
 Deadpool:RegisterModule("Sync", Sync)
 
--- Message types
+-- Message types (compressed codes for sending, old codes accepted on receive)
 local MSG = {
-    KILL        = "KILL",       -- kill report
-    KOS_ADD     = "KOS_ADD",    -- add to KOS list
-    KOS_REM     = "KOS_REM",    -- remove from KOS
-    BOUNTY_ADD  = "BNT_ADD",   -- bounty placed
-    BOUNTY_CLM  = "BNT_CLM",   -- bounty kill claimed
-    SYNC_REQ    = "SYNC_REQ",   -- request full sync
-    SYNC_KOS    = "SYNC_KOS",   -- sync KOS entry
-    SYNC_BNT    = "SYNC_BNT",   -- sync bounty entry
-    SYNC_SCR    = "SYNC_SCR",   -- sync scoreboard entry
-    SYNC_KILL   = "SYNC_KIL",   -- sync kill log entry
-    SYNC_END    = "SYNC_END",   -- sync complete
-    VERSION     = "VERSION",    -- version announcement
-    HEARTBEAT   = "HB",        -- periodic version heartbeat
-    PUSH        = "PUSH",      -- "I have data for you" (version-aware)
-    SIGHTING    = "SIGHT",     -- KOS target spotted by a guild member
-    GM_CONFIG   = "GMCFG",    -- GM config push (point values, timestamps)
+    KILL        = "K",
+    KOS_ADD     = "A",
+    KOS_REM     = "R",
+    BOUNTY_ADD  = "B",
+    BOUNTY_CLM  = "C",
+    SYNC_REQ    = "Q",
+    SYNC_END    = "E",
+    VERSION     = "V",
+    HEARTBEAT   = "H",
+    PUSH        = "P",
+    SIGHTING    = "S",
+    GM_CONFIG   = "G",
+    BULK_KOS    = "BK",
+    BULK_BNT    = "BB",
+    BULK_SCR    = "BS",
+}
+
+-- Legacy code map: old verbose codes -> handler key (for receiving from outdated clients)
+local LEGACY_CODES = {
+    KILL = "K", KOS_ADD = "A", KOS_REM = "R", BNT_ADD = "B", BNT_CLM = "C",
+    SYNC_REQ = "Q", SYNC_END = "E", VERSION = "V", HB = "H", PUSH = "P",
+    SIGHT = "S", GMCFG = "G",
+    SYNC_KOS = "SYNC_KOS", SYNC_BNT = "SYNC_BNT", SYNC_SCR = "SYNC_SCR",
+    SYNC_KIL = "SYNC_KIL",
 }
 
 local SEPARATOR = "|"
 local syncThrottle = 0
-local SYNC_COOLDOWN = 30  -- minimum seconds between full syncs
+local SYNC_COOLDOWN = 60  -- minimum seconds between full syncs
 local HEARTBEAT_INTERVAL = 300  -- broadcast sync version every 5 minutes
 local onlineGuildMembers = {}   -- track who's online for new-login detection
+local rosterCheckThrottle = 0   -- throttle GUILD_ROSTER_UPDATE processing
+local ROSTER_CHECK_COOLDOWN = 30  -- seconds between roster diff checks
+local pushCooldowns = {}        -- [memberName] = timestamp, prevent repeated pushes
+local PUSH_COOLDOWN = 300       -- 5 min between push offers to the same member
+local sendBucket = 0            -- rate limiter: messages sent in current window
+local sendBucketReset = 0       -- timestamp of last bucket reset
+local SEND_BUCKET_MAX = 8       -- max messages per 10-second window
+local SEND_BUCKET_WINDOW = 10   -- seconds
+local gmConfigThrottle = 0      -- last BroadcastGMConfig timestamp
+local GM_CONFIG_COOLDOWN = 30   -- min seconds between GM config broadcasts
+local initialSyncDone = false   -- prevent re-syncing on zone changes
 
 ----------------------------------------------------------------------
 -- Init
@@ -43,40 +62,42 @@ function Sync:Init()
         end
     end)
 
-    -- Request sync from guild on login (delayed)
+    -- Request sync from guild on FIRST login only (not zone changes or reloads)
     Deadpool:RegisterEvent("PLAYER_ENTERING_WORLD", function(event, isInitialLogin, isReloadingUi)
-        if Deadpool.db.settings.syncEnabled then
-            -- Delay sync request to let other addons load
-            C_Timer.After(5, function()
-                Sync:BroadcastVersion()
-                C_Timer.After(2, function()
-                    Deadpool:RequestSync()
-                end)
-            end)
+        if initialSyncDone then return end
+        initialSyncDone = true
 
-            -- Snapshot current online roster for new-login detection
+        if Deadpool.db.settings.syncEnabled then
             C_Timer.After(8, function()
+                Sync:BroadcastVersion()
+            end)
+            C_Timer.After(12, function()
+                Deadpool:RequestSync()
+            end)
+            C_Timer.After(15, function()
                 Sync:SnapshotOnlineRoster()
             end)
         end
     end)
 
     ---------------------------------------------------------------
-    -- Detect guild members coming online
-    -- When someone new appears, push our data to them
+    -- Detect guild members coming online (throttled)
     ---------------------------------------------------------------
     Deadpool:RegisterEvent("GUILD_ROSTER_UPDATE", function()
         if not Deadpool.db.settings.syncEnabled then return end
+        local now = time()
+        if (now - rosterCheckThrottle) < ROSTER_CHECK_COOLDOWN then return end
+        rosterCheckThrottle = now
         Sync:CheckForNewOnlineMembers()
     end)
 
     ---------------------------------------------------------------
-    -- Pre-logout: broadcast full state to guild so anyone online
-    -- captures our data before we disappear
+    -- Pre-logout: broadcast version so guild knows our state,
+    -- but do NOT dump the full database (causes disconnects)
     ---------------------------------------------------------------
     Deadpool:RegisterEvent("PLAYER_LOGOUT", function()
         if Deadpool.db.settings.syncEnabled and IsInGuild() then
-            Sync:PushFullStateToGuild()
+            Sync:SendImmediate(MSG.HEARTBEAT, tostring(Deadpool.db.syncVersion or 0))
         end
     end)
 
@@ -94,20 +115,56 @@ function Sync:Init()
 end
 
 ----------------------------------------------------------------------
--- Send message to guild
-----------------------------------------------------------------------
+-- Outbound message queue: staggers sends to prevent DC\n-- All messages go through the queue. High-priority messages (kills,\n-- sightings) go to the front; bulk sync goes to the back.\n----------------------------------------------------------------------
+local sendQueue = {}
+local sendQueueRunning = false
+local SEND_INTERVAL = 1.0  -- seconds between queued messages (safe rate)
+
+local function ProcessQueue()
+    if #sendQueue == 0 then
+        sendQueueRunning = false
+        return
+    end
+    local msg = table.remove(sendQueue, 1)
+    if IsInGuild() and C_ChatInfo and C_ChatInfo.SendAddonMessage then
+        C_ChatInfo.SendAddonMessage(Deadpool.prefix, msg, "GUILD")
+    end
+    C_Timer.After(SEND_INTERVAL, ProcessQueue)
+end
+
+local function StartQueue()
+    if sendQueueRunning then return end
+    sendQueueRunning = true
+    ProcessQueue()
+end
+
 function Sync:Send(msgType, data, target)
     if not Deadpool.db.settings.syncEnabled then return end
     if not IsInGuild() then return end
 
     local payload = msgType .. ":" .. (data or "")
+    if #payload > 255 then payload = payload:sub(1, 255) end
 
-    -- Truncate to 255 bytes (WoW limit)
-    if #payload > 255 then
-        payload = payload:sub(1, 255)
+    -- Priority messages go to front of queue; bulk goes to back
+    local isPriority = (msgType == MSG.KILL or msgType == MSG.KOS_ADD or
+        msgType == MSG.KOS_REM or msgType == MSG.SIGHTING or
+        msgType == MSG.BOUNTY_CLM)
+
+    if isPriority and #sendQueue > 0 then
+        table.insert(sendQueue, 1, payload)
+    else
+        sendQueue[#sendQueue + 1] = payload
     end
 
-    -- Always use GUILD channel — never whisper to prevent cross-guild data leaks
+    StartQueue()
+end
+
+-- Immediate send bypass for critical single messages (version, heartbeat)
+function Sync:SendImmediate(msgType, data)
+    if not Deadpool.db.settings.syncEnabled then return end
+    if not IsInGuild() then return end
+    local payload = msgType .. ":" .. (data or "")
+    if #payload > 255 then payload = payload:sub(1, 255) end
     if C_ChatInfo and C_ChatInfo.SendAddonMessage then
         C_ChatInfo.SendAddonMessage(Deadpool.prefix, payload, "GUILD")
     end
@@ -152,18 +209,33 @@ function Sync:OnAddonMessage(message, channel, sender)
         self:HandleSyncKill(data, sender)
     elseif msgType == MSG.SYNC_END then
         Deadpool:Debug("Sync complete from " .. sender)
+        if Deadpool.RefreshUI then Deadpool:RefreshUI() end
+    elseif msgType == MSG.BULK_KOS then
+        self:HandleBulkKOS(data, sender)
+    elseif msgType == MSG.BULK_BNT then
+        self:HandleBulkBounty(data, sender)
+    elseif msgType == MSG.BULK_SCR then
+        self:HandleBulkScore(data, sender)
     elseif msgType == MSG.VERSION then
         self:HandleVersion(data, sender)
     elseif msgType == MSG.HEARTBEAT then
         self:HandleHeartbeat(data, sender)
     elseif msgType == MSG.PUSH then
         -- Another client is offering to push data to us
-        -- Respond with a sync request targeted to them
-        Deadpool:Debug("Push offer from " .. sender .. " — requesting their data")
-        Sync:Send(MSG.SYNC_REQ, tostring(Deadpool.db.syncVersion or 0), sender)
-    elseif msgType == MSG.SIGHTING then
+        -- Only request if our version is lower AND we haven't synced recently
+        local remoteVer = tonumber(data) or 0
+        local myVer = Deadpool.db.syncVersion or 0
+        if remoteVer > myVer then
+            local now = time()
+            if (now - syncThrottle) >= SYNC_COOLDOWN then
+                syncThrottle = now
+                Deadpool:Debug("Push offer from " .. sender .. " v" .. remoteVer .. " > ours v" .. myVer .. " — requesting")
+                Sync:Send(MSG.SYNC_REQ, tostring(myVer), sender)
+            end
+        end
+    elseif msgType == "S" then
         self:HandleSighting(data, sender)
-    elseif msgType == MSG.GM_CONFIG then
+    elseif msgType == "G" then
         self:HandleGMConfig(data, sender)
     end
 end
@@ -238,7 +310,7 @@ function Deadpool:RequestSync()
 end
 
 function Sync:BroadcastVersion()
-    Sync:Send(MSG.VERSION, Deadpool.version)
+    Sync:SendImmediate(MSG.VERSION, Deadpool.version)
 end
 
 ----------------------------------------------------------------------
@@ -353,80 +425,228 @@ function Sync:HandleBountyClaim(data, sender)
 end
 
 ----------------------------------------------------------------------
--- Full sync: respond to sync requests
+-- Bulk packing helpers: fit multiple records per 255-byte message
+-- Record separator: ;   Field separator: ,
+-- This is 5-10x more efficient than one record per message.
+----------------------------------------------------------------------
+local RECORD_SEP = ";"
+local FIELD_SEP = ","
+
+-- Pack a list of record strings into messages, each under maxLen bytes
+local function packRecords(records, msgType, maxLen)
+    maxLen = maxLen or 240  -- leave room for message type prefix
+    local messages = {}
+    local current = ""
+    for _, rec in ipairs(records) do
+        if current == "" then
+            current = rec
+        elseif #current + 1 + #rec <= maxLen then
+            current = current .. RECORD_SEP .. rec
+        else
+            messages[#messages + 1] = current
+            current = rec
+        end
+    end
+    if current ~= "" then
+        messages[#messages + 1] = current
+    end
+    return messages
+end
+
+-- Unpack a bulk message back into list of field arrays
+local function unpackRecords(data)
+    local records = {}
+    for rec in (data .. RECORD_SEP):gmatch("(.-)" .. RECORD_SEP) do
+        if rec ~= "" then
+            local fields = {}
+            for f in (rec .. FIELD_SEP):gmatch("(.-)" .. FIELD_SEP) do
+                fields[#fields + 1] = f
+            end
+            records[#records + 1] = fields
+        end
+    end
+    return records
+end
+
+----------------------------------------------------------------------
+-- Full sync: respond to sync requests using BULK packed messages
+-- KOS + active bounties + guild config only.
+-- Scoreboard builds from real-time KILL messages (no bulk sync).
 ----------------------------------------------------------------------
 function Sync:HandleSyncRequest(sender)
-    Deadpool:Debug("Sync request from " .. sender .. " — sending data")
+    -- Rate-limit
+    local now = time()
+    if not self._lastSyncResponse then self._lastSyncResponse = 0 end
+    if (now - self._lastSyncResponse) < SYNC_COOLDOWN then
+        Deadpool:Debug("Sync request from " .. sender .. " throttled")
+        return
+    end
+    self._lastSyncResponse = now
 
-    local delay = 0
-    local BATCH_DELAY = 0.5  -- stagger messages (0.5s to prevent disconnect)
+    Deadpool:Debug("Sync request from " .. sender .. " — sending bulk data")
 
-    -- Send KOS entries (stripped: no race, reason truncated to 20 chars)
+    -- All messages go through the queue which handles pacing at 1 msg/sec.
+    -- No C_Timer.After staggering needed.
+
+    -- Pack KOS entries: only sync recently-active targets
+    local kosRecords = {}
+    local expireDays = Deadpool.db.guildConfig.kosExpireDays or 14
+    local syncCutoff = (expireDays > 0) and (time() - (expireDays * 86400)) or 0
     for fullName, entry in pairs(Deadpool.db.kosList) do
-        C_Timer.After(delay, function()
-            local reason = entry.reason or ""
-            if #reason > 20 then reason = reason:sub(1, 20) end
-            local data = encode(fullName, entry.class or "", entry.level or 0,
-                reason, entry.addedBy or "", entry.addedDate or 0, entry.totalKills or 0)
-            Sync:Send(MSG.SYNC_KOS, data)
-        end)
-        delay = delay + BATCH_DELAY
+        local lastActivity = math.max(
+            entry.addedDate or 0,
+            entry.lastSeenTime or 0,
+            entry.lastKilledTime or 0
+        )
+        if Deadpool:HasActiveBounty(fullName) or syncCutoff == 0 or lastActivity >= syncCutoff then
+            kosRecords[#kosRecords + 1] = table.concat({
+                fullName, entry.class or "", entry.level or 0, entry.totalKills or 0,
+            }, FIELD_SEP)
+        end
+    end
+    for _, packed in ipairs(packRecords(kosRecords, MSG.BULK_KOS)) do
+        Sync:Send(MSG.BULK_KOS, packed)
     end
 
-    -- Send bounties (stripped: no placedBy, infer bountyType)
+    -- Pack active bounties
+    local bntRecords = {}
     for fullName, bounty in pairs(Deadpool.db.bounties) do
-        C_Timer.After(delay, function()
-            local data = encode(fullName, bounty.bountyGold or 0, bounty.maxKills or 10,
-                bounty.currentKills or 0, bounty.placedDate or 0,
-                bounty.expired and "1" or "0", bounty.bountyPoints or 0)
-            Sync:Send(MSG.SYNC_BNT, data)
-        end)
-        delay = delay + BATCH_DELAY
+        if not bounty.expired then
+            bntRecords[#bntRecords + 1] = table.concat({
+                fullName, bounty.bountyGold or 0, bounty.bountyPoints or 0,
+                bounty.maxKills or 10, bounty.currentKills or 0,
+            }, FIELD_SEP)
+        end
+    end
+    for _, packed in ipairs(packRecords(bntRecords, MSG.BULK_BNT)) do
+        Sync:Send(MSG.BULK_BNT, packed)
     end
 
-    -- Send scoreboard (skip during 24hr reset window to prevent old data spreading)
+    -- Pack scoreboard (top 30)
     local resetAt = Deadpool.db.guildConfig.scoreboardResetAt or 0
-    local inResetWindow = resetAt > 0 and (time() - resetAt) < 86400
-    if not inResetWindow then
-        for fullName, score in pairs(Deadpool.db.scoreboard) do
-            C_Timer.After(delay, function()
-                local data = encode(fullName, score.totalKills or 0, score.bountyKills or 0,
-                    score.kosKills or 0, score.totalPoints or 0)
-                Sync:Send(MSG.SYNC_SCR, data)
-            end)
-            delay = delay + BATCH_DELAY
+    if not (resetAt > 0 and (time() - resetAt) < 86400) then
+        local sorted = {}
+        for fn, sc in pairs(Deadpool.db.scoreboard) do
+            sorted[#sorted + 1] = { key = fn, score = sc }
+        end
+        table.sort(sorted, function(a, b) return (a.score.totalPoints or 0) > (b.score.totalPoints or 0) end)
+        local scrRecords = {}
+        for i = 1, math.min(#sorted, 30) do
+            local s = sorted[i]
+            scrRecords[#scrRecords + 1] = table.concat({
+                s.key, s.score.totalKills or 0, s.score.kosKills or 0,
+                s.score.bountyKills or 0, s.score.totalPoints or 0,
+            }, FIELD_SEP)
+        end
+        for _, packed in ipairs(packRecords(scrRecords, MSG.BULK_SCR)) do
+            Sync:Send(MSG.BULK_SCR, packed)
         end
     end
 
-    -- Send kill log (last 10 entries, stripped: no class or points)
-    local killLog = Deadpool.db.killLog
-    local maxSync = math.min(#killLog, 10)
-    for i = 1, maxSync do
-        local k = killLog[i]
-        C_Timer.After(delay, function()
-            local data = encode(k.killer or "", k.victim or "",
-                k.victimLevel or 0, k.zone or "", k.time or 0, k.killType or "random")
-            Sync:Send(MSG.SYNC_KILL, data)
-        end)
-        delay = delay + BATCH_DELAY
+    -- Guild config
+    local gc = Deadpool.db.guildConfig
+    Sync:Send(MSG.GM_CONFIG, table.concat({
+        gc.pointsPerKill or 5, gc.pointsPerKOSKill or 25, gc.pointsPerBountyKill or 100,
+        gc.pointsUnderdogMultiplier3 or 2.0, gc.pointsUnderdogMultiplier6 or 3.0,
+        gc.pointsLowbieFloor or 1, gc.updatedBy or "", gc.updatedAt or 0,
+    }, "|"))
+
+    -- End marker
+    Sync:Send(MSG.SYNC_END, "")
+end
+
+----------------------------------------------------------------------
+-- Bulk receive handlers: unpack multiple records per message
+----------------------------------------------------------------------
+function Sync:HandleBulkKOS(data, sender)
+    local records = unpackRecords(data)
+    for _, fields in ipairs(records) do
+        local fullName = fields[1]
+        if fullName and fullName ~= "" then
+            local class = (fields[2] and fields[2] ~= "") and fields[2] or nil
+            local level = tonumber(fields[3]) or 0
+            local totalKills = tonumber(fields[4]) or 0
+
+            local existing = Deadpool.db.kosList[fullName]
+            if not existing then
+                Deadpool.db.kosList[fullName] = {
+                    name = Deadpool:ShortName(fullName),
+                    realm = fullName:match("%-(.+)$") or "",
+                    class = class,
+                    level = level > 0 and level or nil,
+                    totalKills = totalKills,
+                    lastKilledBy = nil, lastKilledTime = 0,
+                    lastSeenZone = nil, lastSeenTime = 0,
+                }
+            else
+                if totalKills > (existing.totalKills or 0) then
+                    existing.totalKills = totalKills
+                end
+                if class and not existing.class then existing.class = class end
+                if level > 0 and (not existing.level or existing.level == 0) then
+                    existing.level = level
+                end
+            end
+        end
     end
+end
 
-    -- Send guild config (stripped: no managers/warGuilds — those sync via BroadcastGMConfig)
-    C_Timer.After(delay, function()
-        local gc = Deadpool.db.guildConfig
-        local data = table.concat({
-            gc.pointsPerKill or 5, gc.pointsPerKOSKill or 25, gc.pointsPerBountyKill or 100,
-            gc.pointsUnderdogMultiplier3 or 2.0, gc.pointsUnderdogMultiplier6 or 3.0,
-            gc.pointsLowbieFloor or 1, gc.updatedBy or "", gc.updatedAt or 0,
-        }, "|")
-        Sync:Send(MSG.GM_CONFIG, data)
-    end)
-    delay = delay + BATCH_DELAY
+function Sync:HandleBulkBounty(data, sender)
+    local records = unpackRecords(data)
+    for _, fields in ipairs(records) do
+        local fullName = fields[1]
+        if fullName and fullName ~= "" then
+            local gold = tonumber(fields[2]) or 0
+            local points = tonumber(fields[3]) or 0
+            local maxKills = tonumber(fields[4]) or 10
+            local currentKills = tonumber(fields[5]) or 0
+            local bountyType = (points > 0 and gold == 0) and "points" or "gold"
 
-    -- Send end marker
-    C_Timer.After(delay + BATCH_DELAY, function()
-        Sync:Send(MSG.SYNC_END, "", sender)
-    end)
+            -- Auto-add to KOS if not there
+            if not Deadpool:IsKOS(fullName) then
+                Deadpool:AddToKOS(fullName, "Bounty target", true)
+            end
+
+            local existing = Deadpool.db.bounties[fullName]
+            if not existing then
+                Deadpool.db.bounties[fullName] = {
+                    target = fullName,
+                    bountyGold = gold, bountyPoints = points,
+                    bountyType = bountyType,
+                    maxKills = maxKills, currentKills = currentKills,
+                    expired = false, claims = {},
+                }
+            else
+                if currentKills > (existing.currentKills or 0) then
+                    existing.currentKills = currentKills
+                end
+                if gold > (existing.bountyGold or 0) then existing.bountyGold = gold end
+                if points > (existing.bountyPoints or 0) then existing.bountyPoints = points end
+            end
+        end
+    end
+end
+
+function Sync:HandleBulkScore(data, sender)
+    local resetAt = Deadpool.db.guildConfig.scoreboardResetAt or 0
+    if resetAt > 0 and (time() - resetAt) < 86400 then return end
+
+    local records = unpackRecords(data)
+    for _, fields in ipairs(records) do
+        local fullName = fields[1]
+        if fullName and fullName ~= "" and Deadpool:IsGuildMember(fullName) then
+            local totalKills = tonumber(fields[2]) or 0
+            local kosKills = tonumber(fields[3]) or 0
+            local bountyKills = tonumber(fields[4]) or 0
+            local totalPoints = tonumber(fields[5]) or 0
+
+            local score = Deadpool:GetOrCreateScore(fullName)
+            if totalKills > (score.totalKills or 0) then score.totalKills = totalKills end
+            if kosKills > (score.kosKills or 0) then score.kosKills = kosKills end
+            if bountyKills > (score.bountyKills or 0) then score.bountyKills = bountyKills end
+            if totalPoints > (score.totalPoints or 0) then score.totalPoints = totalPoints end
+        end
+    end
 end
 
 function Sync:HandleSyncKOS(data, sender)
@@ -594,6 +814,17 @@ function Sync:HandleSighting(data, sender)
 
     if not fullName or fullName == "" then return end
 
+    -- Dedup: share cooldown with local KOS detection so we don't spam
+    -- If we already saw this target locally (TARGET ACQUIRED), skip the guild alert
+    -- If another guildmate already reported this target, also skip
+    if not Deadpool._sightingCooldowns then Deadpool._sightingCooldowns = {} end
+    local now = time()
+    if Deadpool._sightingCooldowns[fullName] and (now - Deadpool._sightingCooldowns[fullName]) < 60 then
+        Deadpool:Debug("Sighting dedup: " .. fullName .. " (already alerted)")
+        return
+    end
+    Deadpool._sightingCooldowns[fullName] = now
+
     local senderShort = sender:match("^(.-)%-") or sender
 
     -- Update sighting data
@@ -615,7 +846,7 @@ function Sync:HandleSighting(data, sender)
 
     -- Play sound
     if Deadpool.db.settings.alertSound then
-        PlaySound(8959)
+        Deadpool:PlayKOSAlertSound()
     end
 
     -- Show visual alert
@@ -643,6 +874,14 @@ function Deadpool:BroadcastGMConfig()
         self:Print(Deadpool.colors.red .. "Only managers can push config changes.|r")
         return
     end
+    -- Throttle: prevent rapid-fire config pushes
+    local now = time()
+    if (now - gmConfigThrottle) < GM_CONFIG_COOLDOWN then
+        self:Debug("GM config broadcast throttled")
+        return
+    end
+    gmConfigThrottle = now
+
     local gc = self.db.guildConfig
     gc.updatedBy = self:GetPlayerFullName()
     gc.updatedAt = time()
@@ -673,6 +912,7 @@ function Deadpool:BroadcastGMConfig()
         warList,
         gc.scoreboardResetAt or 0,
         gc.killLogResetAt or 0,
+        gc.kosResetAt or 0,
     }, "|")
     Sync:Send(MSG.GM_CONFIG, data)
     self:Print(Deadpool.colors.gold .. "Guild config pushed to all members.|r")
@@ -739,6 +979,20 @@ function Sync:HandleGMConfig(data, sender)
         Deadpool:Print(Deadpool.colors.red .. "Kill log reset by GM — logs wiped.|r")
     end
 
+    -- Check for KOS list purge signal
+    local remoteKOSReset = tonumber(parts[13]) or 0
+    local localKOSReset = Deadpool.db.guildConfig.kosResetAt or 0
+    if remoteKOSReset > localKOSReset then
+        Deadpool.db.guildConfig.kosResetAt = remoteKOSReset
+        -- Remove all KOS entries that don't have an active bounty
+        for fullName in pairs(Deadpool.db.kosList) do
+            if not Deadpool:HasActiveBounty(fullName) then
+                Deadpool.db.kosList[fullName] = nil
+            end
+        end
+        Deadpool:Print(Deadpool.colors.red .. "KOS list purged by officer — non-bounty entries removed.|r")
+    end
+
     local senderShort = sender:match("^(.-)%-") or sender
     Deadpool:Print(Deadpool.colors.gold .. "Guild config updated by " .. senderShort .. "|r")
     if Deadpool.RefreshUI then Deadpool:RefreshUI() end
@@ -779,6 +1033,7 @@ end
 function Sync:CheckForNewOnlineMembers()
     local numTotal = GetNumGuildMembers()
     local currentOnline = {}
+    local now = time()
     for i = 1, numTotal do
         local name, _, _, _, _, _, _, _, online = GetGuildRosterInfo(i)
         if name and online then
@@ -787,12 +1042,14 @@ function Sync:CheckForNewOnlineMembers()
             if not onlineGuildMembers[name] then
                 local myName = Deadpool:GetPlayerFullName()
                 if name ~= UnitName("player") and name ~= myName then
-                    Deadpool:Debug(name .. " came online — sending push offer")
-                    -- Send them a push offer with our version
-                    -- They'll respond with SYNC_REQ if they want our data
-                    C_Timer.After(3, function()
-                        Sync:Send(MSG.PUSH, tostring(Deadpool.db.syncVersion or 0), name)
-                    end)
+                    -- Per-member push cooldown: don't spam the same person
+                    if not pushCooldowns[name] or (now - pushCooldowns[name]) >= PUSH_COOLDOWN then
+                        pushCooldowns[name] = now
+                        Deadpool:Debug(name .. " came online — sending push offer")
+                        C_Timer.After(5, function()
+                            Sync:Send(MSG.PUSH, tostring(Deadpool.db.syncVersion or 0), name)
+                        end)
+                    end
                 end
             end
         end
@@ -801,26 +1058,5 @@ function Sync:CheckForNewOnlineMembers()
 end
 
 ----------------------------------------------------------------------
--- Pre-logout: blast our full state to guild channel
--- Anyone online absorbs it; nobody online = data safe in our
--- SavedVariables and we'll push on next login
+-- Pre-logout: send heartbeat only (full dump removed — caused DC)
 ----------------------------------------------------------------------
-function Sync:PushFullStateToGuild()
-    -- Can't use C_Timer here (we're logging out), so send synchronously
-    for fullName, entry in pairs(Deadpool.db.kosList) do
-        local reason = entry.reason or ""
-        if #reason > 20 then reason = reason:sub(1, 20) end
-        local data = encode(fullName, entry.class or "", entry.level or 0,
-            reason, entry.addedBy or "", entry.addedDate or 0, entry.totalKills or 0)
-        Sync:Send(MSG.SYNC_KOS, data)
-    end
-    -- Skip scoreboard during 24hr reset window
-    local resetAt = Deadpool.db.guildConfig.scoreboardResetAt or 0
-    if resetAt == 0 or (time() - resetAt) >= 86400 then
-        for fullName, score in pairs(Deadpool.db.scoreboard) do
-            local data = encode(fullName, score.totalKills or 0, score.bountyKills or 0,
-                score.kosKills or 0, score.totalPoints or 0)
-            Sync:Send(MSG.SYNC_SCR, data)
-        end
-    end
-end

@@ -14,3 +14,6 @@ Thumbs.db
 # Deploy secrets
 .curseforge-token
 deploy-curseforge.ps1
+
+# Bug reports
+Bugs/

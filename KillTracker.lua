@@ -13,9 +13,10 @@ local COMBATLOG_OBJECT_AFFILIATION_MINE = 0x00000001
 local COMBATLOG_OBJECT_AFFILIATION_PARTY = 0x00000002
 local COMBATLOG_OBJECT_AFFILIATION_RAID = 0x00000004
 
--- Track recently scanned units to avoid spamming alerts
-local recentKOSAlerts = {}
-local ALERT_COOLDOWN = 30  -- seconds between re-alerting for same target
+-- Shared sighting cooldown: lives on Deadpool namespace so Sync can also dedup.
+-- Local reference for convenience; Sync.lua reads Deadpool._sightingCooldowns.
+if not Deadpool._sightingCooldowns then Deadpool._sightingCooldowns = {} end
+local SIGHTING_COOLDOWN = 60  -- seconds between re-alerting/re-broadcasting for same target
 
 function KillTracker:Init()
     -- Register combat log events
@@ -39,6 +40,10 @@ end
 
 -- Track who last attacked us for auto-KOS
 local lastAttackers = {}  -- [attackerName] = timestamp
+
+-- Track recent damage to hostile players for assist credit
+-- [victimGUID] = { [friendlyPlayerName] = timestamp }
+local recentDamageToHostile = {}
 
 -- Track the last hostile player who damaged us (for death attribution)
 local lastHostileAttacker = {
@@ -82,7 +87,44 @@ function KillTracker:OnCombatLogEvent()
     end
 
     -- Track last hostile player who damaged us (for death attribution)
+    -- Also track highest crit on enemy players and assist damage
     if subevent and (subevent:find("_DAMAGE") or subevent == "SWING_DAMAGE") then
+        -- Get damage amount (position varies by subevent)
+        local amount, overkill, school, resisted, blocked, absorbed, critical
+        if subevent == "SWING_DAMAGE" then
+            amount, overkill, school, resisted, blocked, absorbed, critical = select(12, CombatLogGetCurrentEventInfo())
+        elseif subevent:find("_DAMAGE") then
+            amount, overkill, school, resisted, blocked, absorbed, critical = select(15, CombatLogGetCurrentEventInfo())
+        end
+
+        -- Track OUR highest crit on enemy players
+        if critical and amount and sourceName == UnitName("player") and destGUID and destGUID:sub(1, 6) == "Player" then
+            if destFlags and bit.band(destFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
+                if not Deadpool.db.highestCrit then Deadpool.db.highestCrit = {} end
+                if amount > (Deadpool.db.highestCrit.amount or 0) then
+                    Deadpool.db.highestCrit = {
+                        amount = amount,
+                        victim = Deadpool:NormalizeName(destName) or destName,
+                        time = time(),
+                    }
+                end
+            end
+        end
+
+        -- Track friendly damage to hostile players for assist credit
+        if sourceGUID and sourceGUID:sub(1, 6) == "Player" and sourceFlags then
+            local isFriendly = bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0
+                or bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0
+                or bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0
+            if isFriendly and destGUID and destGUID:sub(1, 6) == "Player" and destFlags then
+                if bit.band(destFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
+                    if not recentDamageToHostile[destGUID] then recentDamageToHostile[destGUID] = {} end
+                    recentDamageToHostile[destGUID][sourceName] = time()
+                end
+            end
+        end
+
+        -- Track enemy damage to us (existing)
         if destName == UnitName("player") and sourceGUID and sourceGUID:sub(1, 6) == "Player" then
             if sourceFlags and bit.band(sourceFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
                 local aClass, aRace = self:GetInfoFromGUID(sourceGUID)
@@ -215,8 +257,37 @@ function KillTracker:ProcessKillingBlow(sourceGUID, sourceName, sourceFlags, des
 
     Deadpool:Debug("Killing blow detected: " .. sourceName .. " killed " .. destName .. " in " .. zone)
 
-    -- Record the kill
+    -- Record the kill for the killer
     Deadpool:RecordKill(killerFullName, victimFullName, victimClass, victimRace, victimLevel, zone)
+
+    -- Award assist points (75%) to party/raid members who damaged the victim
+    -- but didn't get the killing blow
+    if destGUID and recentDamageToHostile[destGUID] then
+        local gc = Deadpool:GetPointsConfig()
+        local isKOS = Deadpool:IsKOS(victimFullName)
+        local hasBounty = Deadpool:HasActiveBounty(victimFullName)
+        local basePoints = hasBounty and (gc.pointsPerBountyKill or 100)
+            or (isKOS and (gc.pointsPerKOSKill or 25) or (gc.pointsPerKill or 5))
+        local assistPoints = math.floor(basePoints * 0.75)
+        if assistPoints > 0 then
+            for playerName, timestamp in pairs(recentDamageToHostile[destGUID]) do
+                if playerName ~= sourceName and (time() - timestamp) < 30 then
+                    local assistFullName = Deadpool:NormalizeName(playerName)
+                    if assistFullName and Deadpool:IsGuildMember(assistFullName) then
+                        local assistScore = Deadpool:GetOrCreateScore(assistFullName)
+                        assistScore.totalPoints = (assistScore.totalPoints or 0) + assistPoints
+                        assistScore.assists = (assistScore.assists or 0) + 1
+                        if assistFullName == Deadpool:GetPlayerFullName() then
+                            Deadpool:Print(Deadpool.colors.cyan .. "ASSIST|r " ..
+                                Deadpool:ShortName(victimFullName) .. " — " ..
+                                Deadpool.colors.yellow .. "+" .. assistPoints .. " pts|r")
+                        end
+                    end
+                end
+            end
+        end
+        recentDamageToHostile[destGUID] = nil
+    end
 end
 
 ----------------------------------------------------------------------
@@ -279,7 +350,7 @@ function KillTracker:ScanCombatLogForKOS(sourceGUID, sourceName, sourceFlags, de
         if sourceGUID:sub(1, 6) == "Player" and bit.band(sourceFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
             local fullName = Deadpool:NormalizeName(sourceName)
             if fullName and Deadpool:IsKOS(fullName) then
-                self:AlertKOSFromCombatLog(fullName, sourceGUID)
+                self:AlertKOS(fullName, sourceGUID)
             end
         end
     end
@@ -289,24 +360,29 @@ function KillTracker:ScanCombatLogForKOS(sourceGUID, sourceName, sourceFlags, de
         if destGUID:sub(1, 6) == "Player" and bit.band(destFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
             local fullName = Deadpool:NormalizeName(destName)
             if fullName and Deadpool:IsKOS(fullName) then
-                self:AlertKOSFromCombatLog(fullName, destGUID)
+                self:AlertKOS(fullName, destGUID)
             end
         end
     end
 end
 
-function KillTracker:AlertKOSFromCombatLog(fullName, guid)
-    -- Reuse the same cooldown table so we don't spam
+----------------------------------------------------------------------
+-- Unified KOS alert: single function for all detection paths
+-- (nameplate, target, mouseover, combat log). Deduplicates, alerts
+-- locally, and broadcasts ONE sighting per cooldown window.
+----------------------------------------------------------------------
+function KillTracker:AlertKOS(fullName, guid)
     local now = time()
-    if recentKOSAlerts[fullName] and (now - recentKOSAlerts[fullName]) < ALERT_COOLDOWN then
+    local cooldowns = Deadpool._sightingCooldowns
+    if cooldowns[fullName] and (now - cooldowns[fullName]) < SIGHTING_COOLDOWN then
         return
     end
-    recentKOSAlerts[fullName] = now
+    cooldowns[fullName] = now
 
     local entry = Deadpool:GetKOSEntry(fullName)
     if not entry then return end
 
-    -- Try to get fresh info from GUID
+    -- Enrich entry from GUID if available
     if guid then
         local class, race = self:GetInfoFromGUID(guid)
         if class then entry.class = class end
@@ -315,6 +391,13 @@ function KillTracker:AlertKOSFromCombatLog(fullName, guid)
 
     local zone = Deadpool:GetZone()
     Deadpool:UpdateKOSSighting(fullName, zone)
+
+    -- Suppress local alerts in sanctuary zones (can't attack anyway)
+    -- Guild sighting broadcasts from OTHER players are NOT affected by this.
+    if Deadpool.db.settings.suppressInSanctuary and Deadpool:IsInSanctuary() then
+        Deadpool:Debug("KOS alert suppressed in sanctuary: " .. fullName)
+        return
+    end
 
     -- Play alert sound
     if Deadpool.db.settings.alertSound then
@@ -336,7 +419,8 @@ function KillTracker:AlertKOSFromCombatLog(fullName, guid)
         local bountyTag = ""
         if Deadpool:HasActiveBounty(fullName) then
             local bounty = Deadpool:GetBounty(fullName)
-            bountyTag = Deadpool.colors.gold .. " [BOUNTY: " .. bounty.bountyGold .. "g]|r"
+            local reward = (bounty.bountyGold or 0) > 0 and (bounty.bountyGold .. "g") or ((bounty.bountyPoints or 0) .. "pts")
+            bountyTag = Deadpool.colors.gold .. " [BOUNTY: " .. reward .. "]|r"
         end
 
         Deadpool:Print(Deadpool.colors.red .. "TARGET ACQUIRED|r — " ..
@@ -418,12 +502,21 @@ function KillTracker:CheckAutoKOS(subevent, sourceGUID, sourceName, sourceFlags,
     Deadpool:Print(Deadpool.colors.orange .. "HOSTILE|r " .. display .. " attacked you!")
 end
 
--- Clean up old aggression tracking every 5 minutes
+-- Clean up old aggression tracking and assist tracking every 5 minutes
 if C_Timer and C_Timer.NewTicker then
     C_Timer.NewTicker(300, function()
         local now = time()
         for name, t in pairs(playersWeAttacked) do
             if (now - t) > 300 then playersWeAttacked[name] = nil end
+        end
+        -- Clean stale assist tracking entries (older than 60 seconds)
+        for guid, players in pairs(recentDamageToHostile) do
+            local hasActive = false
+            for pname, t in pairs(players) do
+                if (now - t) > 60 then players[pname] = nil
+                else hasActive = true end
+            end
+            if not hasActive then recentDamageToHostile[guid] = nil end
         end
     end)
 end
@@ -470,67 +563,21 @@ function KillTracker:ScanUnit(unitId)
         if guild then entry.guild = guild end
         Deadpool:UpdateKOSSighting(fullName, zone)
 
-        -- Alert if not recently alerted
-        self:AlertKOSSighted(fullName, unitId)
+        -- Alert if not recently alerted (uses unified AlertKOS)
+        self:AlertKOS(fullName, UnitGUID(unitId))
     end
 end
 
 ----------------------------------------------------------------------
--- KOS Alert (delegates to Alerts.lua for visual)
-----------------------------------------------------------------------
-function KillTracker:AlertKOSSighted(fullName, unitId)
-    -- Cooldown check
-    local now = time()
-    if recentKOSAlerts[fullName] and (now - recentKOSAlerts[fullName]) < ALERT_COOLDOWN then
-        return
-    end
-    recentKOSAlerts[fullName] = now
-
-    local entry = Deadpool:GetKOSEntry(fullName)
-    if not entry then return end
-
-    -- Play alert sound
-    if Deadpool.db.settings.alertSound then
-        PlaySound(8959)  -- PVP flag taken sound - urgent and noticeable
-    end
-
-    -- Try to kick off the visual alert (Alerts.lua)
-    if Deadpool.ShowKOSAlert then
-        Deadpool:ShowKOSAlert(fullName, entry)
-    end
-
-    -- Chat notification
-    if Deadpool.db.settings.announceKOSSighted then
-        local display = entry.class and Deadpool:ClassColor(entry.class, entry.name) or entry.name
-        local zone = Deadpool:GetZone()
-        local subZone = Deadpool:GetSubZone()
-        local location = zone
-        if subZone and subZone ~= "" then
-            location = location .. " - " .. subZone
-        end
-
-        local bountyTag = ""
-        if Deadpool:HasActiveBounty(fullName) then
-            local bounty = Deadpool:GetBounty(fullName)
-            bountyTag = Deadpool.colors.gold .. " [BOUNTY: " ..
-                Deadpool:FormatGold(bounty.bountyGold) .. "]|r"
-        end
-
-        Deadpool:Print(Deadpool.colors.red .. "TARGET ACQUIRED|r — " ..
-            display .. bountyTag .. " spotted in " ..
-            Deadpool.colors.yellow .. location .. "|r")
-    end
-end
-
-----------------------------------------------------------------------
--- Periodic cleanup of the alert cooldown table
+-- Periodic cleanup of the sighting cooldown table
 ----------------------------------------------------------------------
 if C_Timer and C_Timer.NewTicker then
-    C_Timer.NewTicker(60, function()
+    C_Timer.NewTicker(120, function()
+        if not Deadpool._sightingCooldowns then return end
         local now = time()
-        for name, t in pairs(recentKOSAlerts) do
-            if (now - t) > ALERT_COOLDOWN * 2 then
-                recentKOSAlerts[name] = nil
+        for name, t in pairs(Deadpool._sightingCooldowns) do
+            if (now - t) > SIGHTING_COOLDOWN * 2 then
+                Deadpool._sightingCooldowns[name] = nil
             end
         end
     end)
