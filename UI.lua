@@ -1107,67 +1107,142 @@ end
 ----------------------------------------------------------------------
 function UI:RenderEnemies()
     self:SetHeaders(
-        { text = "#",          x = 4,   w = 30 },
-        { text = "Enemy",      x = 36,  w = 150 },
-        { text = "Class",      x = 188, w = 90 },
-        { text = "Lvl",        x = 280, w = 30 },
-        { text = "Killed Us",  x = 312, w = 90 },
-        { text = "We Killed",  x = 404, w = 90 },
-        { text = "K/D",        x = 496, w = 60 },
-        { text = "Last Attack", x = 558, w = 150 }
+        { text = "When",    x = 4,   w = 80 },
+        { text = "",        x = 86,  w = 50 },
+        { text = "Killer",  x = 138, w = 220 },
+        { text = "",        x = 360, w = 30 },
+        { text = "Victim",  x = 392, w = 220 },
+        { text = "Zone",    x = 614, w = 200 }
     )
-    local data = Deadpool:GetPublicEnemiesSorted("timesKilledUs")
+
+    -- Merge kills and deaths into one chronological feed
+    local feed = {}
+    for _, e in ipairs(Deadpool.db.killLog or {}) do
+        feed[#feed + 1] = {
+            time = e.time or 0,
+            type = "kill",
+            killer = e.killer,
+            victim = e.victim,
+            killerClass = nil,
+            victimClass = e.victimClass,
+            killerLevel = nil,
+            victimLevel = e.victimLevel,
+            zone = e.zone,
+        }
+    end
+    for _, e in ipairs(Deadpool.db.deathLog or {}) do
+        feed[#feed + 1] = {
+            time = e.time or 0,
+            type = "death",
+            killer = e.killer,
+            victim = e.victim,
+            killerClass = e.killerClass,
+            victimClass = nil,
+            killerLevel = e.killerLevel,
+            victimLevel = nil,
+            zone = e.zone,
+        }
+    end
+    table.sort(feed, function(a, b) return a.time > b.time end)
+
+    -- Enrich: look up missing class/level from enemy sheet and scoreboard
+    for _, e in ipairs(feed) do
+        if not e.killerClass and e.killer then
+            local enemy = Deadpool.db.enemySheet[e.killer]
+            if enemy and enemy.class then e.killerClass = enemy.class end
+        end
+        if not e.victimClass and e.victim then
+            local enemy = Deadpool.db.enemySheet[e.victim]
+            if enemy and enemy.class then e.victimClass = enemy.class end
+        end
+        if (not e.killerLevel or e.killerLevel == 0) and e.killer then
+            local enemy = Deadpool.db.enemySheet[e.killer]
+            if enemy and enemy.level and enemy.level > 0 then e.killerLevel = enemy.level end
+        end
+        if (not e.victimLevel or e.victimLevel == 0) and e.victim then
+            local enemy = Deadpool.db.enemySheet[e.victim]
+            if enemy and enemy.level and enemy.level > 0 then e.victimLevel = enemy.level end
+        end
+    end
+
+    -- Limit to 50
+    local data = {}
+    for i = 1, math.min(#feed, 50) do data[#data + 1] = feed[i] end
+
     if filterText ~= "" then
         local f = {}
         for _, e in ipairs(data) do
-            if (e._key or ""):lower():find(filterText, 1, true) or (e.class or ""):lower():find(filterText, 1, true) then
-                table.insert(f, e)
-            end
+            local s = ((e.killer or "") .. (e.victim or "") .. (e.zone or "")):lower()
+            if s:find(filterText, 1, true) then f[#f + 1] = e end
         end
         data = f
     end
+
     local numRows = #data
     local visibleRows = #contentArea.rows
     scrollMaxOffset = math.max(0, numRows - visibleRows)
     if scrollOffset > scrollMaxOffset then scrollOffset = scrollMaxOffset end
     local offset = scrollOffset
+
     for i = 1, visibleRows do
         local row = contentArea.rows[i]
         local idx = i + offset
         if idx <= numRows then
-            local e = data[idx]; row.data = e; row:Show(); RowBg(row, idx)
-            local rk = tostring(idx)
-            if idx == 1 then rk = Deadpool.colors.red .. "1|r"
-            elseif idx == 2 then rk = Deadpool.colors.orange .. "2|r"
-            elseif idx == 3 then rk = Deadpool.colors.yellow .. "3|r" end
-            SetCol(row, 1, 4, 30, rk, "CENTER")
-            local nm = e.class and Deadpool:ClassColor(e.class, Deadpool:ShortName(e._key)) or Deadpool:ShortName(e._key)
-            SetCol(row, 2, 36, 150, nm)
-            SetCol(row, 3, 188, 90, e.class and Deadpool:ClassColor(e.class, e.class) or "?")
-            SetCol(row, 4, 280, 30, e.level and tostring(e.level) or "?")
-            SetCol(row, 5, 312, 90, Deadpool.colors.red .. (e.timesKilledUs or 0) .. "|r")
-            SetCol(row, 6, 404, 90, Deadpool.colors.green .. (e.timesWeKilledThem or 0) .. "|r")
-            local kd = "-"
-            if (e.timesKilledUs or 0) > 0 then
-                kd = string.format("%.1f", (e.timesWeKilledThem or 0) / e.timesKilledUs)
-            elseif (e.timesWeKilledThem or 0) > 0 then
-                kd = Deadpool.colors.green .. "INF|r"
+            local e = data[idx]; row.data = e; row:Show()
+
+            -- Row tint
+            if e.type == "kill" then
+                row.bg:SetColorTexture(0.05, 0.25, 0.05, 0.35)
+            else
+                row.bg:SetColorTexture(0.25, 0.05, 0.05, 0.35)
             end
-            SetCol(row, 7, 496, 60, kd)
-            SetCol(row, 8, 558, 150, Deadpool:TimeAgo(e.lastKilledUsTime))
-            row.tooltipFunc = function()
-                GameTooltip:AddLine(Deadpool:ShortName(e._key), 1, 1, 1)
-                if e.class then GameTooltip:AddLine("Class: " .. e.class, 0.7, 0.7, 0.7) end
-                if e.race then GameTooltip:AddLine("Race: " .. e.race, 0.7, 0.7, 0.7) end
-                if e.guild then GameTooltip:AddLine("Guild: <" .. e.guild .. ">", 0.4, 0.6, 0.8) end
-                GameTooltip:AddLine(" ")
-                GameTooltip:AddLine("They killed guild: " .. (e.timesKilledUs or 0) .. " times", 0.9, 0.3, 0.3)
-                GameTooltip:AddLine("Guild killed them: " .. (e.timesWeKilledThem or 0) .. " times", 0.3, 0.9, 0.3)
-                GameTooltip:AddLine(" "); GameTooltip:AddLine("Right-click to add to KOS / Bounty", 0.5, 0.5, 0.5)
+
+            -- When
+            SetCol(row, 1, 4, 80, Deadpool.colors.grey .. Deadpool:TimeAgo(e.time) .. "|r")
+
+            -- Event tag
+            if e.type == "kill" then
+                SetCol(row, 2, 86, 50, Deadpool.colors.green .. "KILL|r")
+            else
+                SetCol(row, 2, 86, 50, Deadpool.colors.red .. "DIED|r")
             end
+
+            -- Killer: class-colored name + level
+            local killerShort = Deadpool:ShortName(e.killer or "?")
+            local killerDisplay
+            if e.killerClass then
+                killerDisplay = Deadpool:ClassColor(e.killerClass, killerShort)
+            else
+                killerDisplay = Deadpool.colors.white .. killerShort .. "|r"
+            end
+            if e.killerLevel and e.killerLevel > 0 then
+                killerDisplay = killerDisplay .. Deadpool.colors.grey .. " [" .. e.killerLevel .. "]|r"
+            end
+            SetCol(row, 3, 138, 220, killerDisplay)
+
+            -- Arrow
+            SetCol(row, 4, 360, 30, Deadpool.colors.grey .. ">|r", "CENTER")
+
+            -- Victim: class-colored name + level
+            local victimShort = Deadpool:ShortName(e.victim or "?")
+            local victimDisplay
+            if e.victimClass then
+                victimDisplay = Deadpool:ClassColor(e.victimClass, victimShort)
+            else
+                victimDisplay = Deadpool.colors.white .. victimShort .. "|r"
+            end
+            if e.victimLevel and e.victimLevel > 0 then
+                victimDisplay = victimDisplay .. Deadpool.colors.grey .. " [" .. e.victimLevel .. "]|r"
+            end
+            SetCol(row, 5, 392, 220, victimDisplay)
+
+            -- Zone
+            SetCol(row, 6, 614, 200, Deadpool.colors.yellow .. (e.zone or "?") .. "|r")
+            HideCols(row, 6, 8)
+            row.tooltipFunc = nil
         else row:Hide(); row.data = nil end
     end
-    statusText:SetText(Deadpool:TableCount(Deadpool.demoData:GetMergedEnemySheet()) .. " enemy players tracked")
+    statusText:SetText(#data .. " recent PvP events")
 end
 
 ----------------------------------------------------------------------

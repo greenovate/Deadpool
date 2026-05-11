@@ -304,6 +304,7 @@ function KillTracker:RecordDeath(killerFullName, victimFullName, killerClass, ki
         victim = victimFullName,
         killerClass = killerClass,
         killerRace = killerRace,
+        killerLevel = killerLevel,
         zone = zone,
         time = time(),
     })

@@ -560,10 +560,18 @@ function Deadpool:RecordKill(killerFullName, victimFullName, victimClass, victim
         self:ClaimBountyKill(victimFullName, killerFullName, zone)
     end
 
+    -- Get killer's class if available
+    local killerClass = nil
+    if killerFullName == self:GetPlayerFullName() then
+        local _, cf = UnitClass("player")
+        killerClass = cf
+    end
+
     -- Log the kill
     self:AddKillLogEntry({
         killer = killerFullName,
         victim = victimFullName,
+        killerClass = killerClass,
         victimClass = victimClass,
         victimRace = victimRace,
         victimLevel = victimLevel,

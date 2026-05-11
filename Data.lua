@@ -455,8 +455,8 @@ function Deadpool:GetPublicEnemiesSorted(sortField)
     local list = {}
     local source = Deadpool.demoData:GetMergedEnemySheet()
     for fullName, enemy in pairs(source) do
-        -- Only include enemies who have actually killed guild members
-        if (enemy.timesKilledUs or 0) > 0 then
+        -- Only show enemies with actual PvP interaction
+        if (enemy.timesKilledUs or 0) > 0 or (enemy.timesWeKilledThem or 0) > 0 then
             enemy._key = fullName
             table.insert(list, enemy)
         end

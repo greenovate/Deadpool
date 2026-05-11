@@ -837,6 +837,21 @@ function Deadpool:Init()
     if not self.db._demoPurged then
         self:PurgeDemoData()
     end
+
+    -- One-time cleanup: purge bloated enemy sheet (no-interaction entries)
+    if not self.db._enemySheetCleaned then
+        local removed = 0
+        for fullName, enemy in pairs(self.db.enemySheet) do
+            if (enemy.timesKilledUs or 0) == 0 and (enemy.timesWeKilledThem or 0) == 0 then
+                self.db.enemySheet[fullName] = nil
+                removed = removed + 1
+            end
+        end
+        self.db._enemySheetCleaned = true
+        if removed > 0 then
+            self:Print(self.colors.grey .. "Cleaned " .. removed .. " no-interaction entries from enemy database.|r")
+        end
+    end
 end
 
 ----------------------------------------------------------------------

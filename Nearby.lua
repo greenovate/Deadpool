@@ -124,12 +124,14 @@ function Nearby:ScanUnit(unitId)
             tracked[fullName].distance = dist
             tracked[fullName].unitId = unitId
         end
-        -- Persist all learned info to enemy sheet (available for future sessions)
-        local enemy = Deadpool:GetOrCreateEnemy(fullName)
-        if classFile then enemy.class = classFile end
-        if race then enemy.race = race end
-        if level and level > 0 then enemy.level = level end
-        if guild and guild ~= "" then enemy.guild = guild end
+        -- Update enemy sheet with learned info (only if entry already exists from PvP interaction)
+        local enemy = Deadpool.db.enemySheet and Deadpool.db.enemySheet[fullName]
+        if enemy then
+            if classFile then enemy.class = classFile end
+            if race then enemy.race = race end
+            if level and level > 0 then enemy.level = level end
+            if guild and guild ~= "" then enemy.guild = guild end
+        end
     end
 end
 
@@ -157,6 +159,23 @@ function Nearby:OnCombatLogEvent()
                 end
             end
             self:TrackPlayer(sourceName, sourceGUID, class, race, nil, nil, isStealth)
+
+            -- Stealth alert: enemy player entered stealth nearby
+            if isStealth then
+                local fullName = Deadpool:NormalizeName(sourceName)
+                if fullName then
+                    local now = time()
+                    if not alertCooldowns["stealth_" .. fullName] or (now - alertCooldowns["stealth_" .. fullName]) >= 30 then
+                        alertCooldowns["stealth_" .. fullName] = now
+                        local display = class and Deadpool:ClassColor(class, Deadpool:ShortName(fullName))
+                            or Deadpool:ShortName(fullName)
+                        Deadpool:Print("|cFFFF66FFSTEALTH DETECTED!|r " .. display .. " |cFFFF66FFjust stealthed nearby!|r")
+                        if Deadpool.db.settings.alertSound then
+                            Deadpool:PlayKOSAlertSound()
+                        end
+                    end
+                end
+            end
 
             -- Aggression detection: hostile player damaging a friendly player
             if isDamage and destGUID and destGUID:sub(1, 6) == "Player" and destFlags then
