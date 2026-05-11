@@ -232,22 +232,24 @@ function KillTracker:ProcessKillingBlow(sourceGUID, sourceName, sourceFlags, des
         end
     end
 
-    -- Check if the killer is us or a guild member
+    -- Check if the killer is us, in our party/raid, or in our guild
     local isOurKill = false
 
     -- Check if it's us
     if sourceName == UnitName("player") then
         isOurKill = true
     else
-        -- Check if source is in our guild by checking flags
-        -- In groups: source should be affiliated with us
-        -- For guild tracking outside groups, we rely on addon sync
-        if bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0 then
+        -- Check party/raid affiliation flags AND verify guild membership
+        -- Combat log flags alone are unreliable in TBC Anniversary
+        if bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0
+            or bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0 then
             isOurKill = true
-        elseif bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0 then
-            isOurKill = true
-        elseif bit.band(sourceFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0 then
-            isOurKill = true
+        else
+            -- Not in our group — check if they're a guild member
+            local killerFull = Deadpool:NormalizeName(sourceName)
+            if killerFull and Deadpool:IsGuildMember(killerFull) then
+                isOurKill = true
+            end
         end
     end
 
@@ -557,10 +559,12 @@ function KillTracker:ScanUnit(unitId)
 
         -- Update the KOS entry with latest sighting info
         local entry = Deadpool:GetKOSEntry(fullName)
-        if classFile then entry.class = classFile end
-        if race then entry.race = race end
-        if level and level > 0 then entry.level = level end
-        if guild then entry.guild = guild end
+        if entry then
+            if classFile then entry.class = classFile end
+            if race then entry.race = race end
+            if level and level > 0 then entry.level = level end
+            if guild then entry.guild = guild end
+        end
         Deadpool:UpdateKOSSighting(fullName, zone)
 
         -- Alert if not recently alerted (uses unified AlertKOS)

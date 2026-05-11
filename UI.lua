@@ -309,14 +309,18 @@ function UI:CreateMainFrame()
         text = "Enter player name to add to Kill on Sight:",
         button1 = "Add", button2 = "Cancel",
         hasEditBox = true, maxLetters = 64,
+        OnShow = function(self) self:SetFrameStrata("TOOLTIP") end,
         OnAccept = function(self)
-            local name = self.EditBox:GetText()
+            local eb = self.editBox or self.EditBox
+            local name = eb and eb:GetText()
             if name and name ~= "" then Deadpool:AddToKOS(name, "") end
         end,
         EditBoxOnEnterPressed = function(self)
-            local name = self:GetParent().EditBox:GetText()
+            local parent = self:GetParent()
+            local eb = parent.editBox or parent.EditBox
+            local name = eb and eb:GetText()
             if name and name ~= "" then Deadpool:AddToKOS(name, "") end
-            self:GetParent():Hide()
+            parent:Hide()
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
@@ -325,19 +329,26 @@ function UI:CreateMainFrame()
         text = "Place bounty on %s\nEnter amount (gold or points):",
         button1 = "Gold Bounty", button2 = "Cancel", button3 = "Points Bounty",
         hasEditBox = true, maxLetters = 10,
-        OnAccept = function(self, data)
-            local val = tonumber(self.EditBox:GetText())
-            if val and val > 0 and data then Deadpool:PlaceBounty(data, val, 10, "gold") end
+        OnShow = function(self) self:SetFrameStrata("TOOLTIP") end,
+        OnAccept = function(self)
+            local eb = self.editBox or self.EditBox
+            local val = tonumber(eb and eb:GetText())
+            local target = self.data
+            if val and val > 0 and target then Deadpool:PlaceBounty(target, val, 10, "gold") end
         end,
-        OnAlt = function(self, data)
-            local val = tonumber(self.EditBox:GetText())
-            if val and val > 0 and data then Deadpool:PlaceBounty(data, val, 10, "points") end
+        OnAlt = function(self)
+            local eb = self.editBox or self.EditBox
+            local val = tonumber(eb and eb:GetText())
+            local target = self.data
+            if val and val > 0 and target then Deadpool:PlaceBounty(target, val, 10, "points") end
         end,
         EditBoxOnEnterPressed = function(self)
-            local val = tonumber(self:GetParent().EditBox:GetText())
-            local data = self:GetParent().data
+            local parent = self:GetParent()
+            local eb = parent.editBox or parent.EditBox
+            local val = tonumber(eb and eb:GetText())
+            local data = parent.data
             if val and val > 0 and data then Deadpool:PlaceBounty(data, val, 10, "gold") end
-            self:GetParent():Hide()
+            parent:Hide()
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
@@ -346,19 +357,26 @@ function UI:CreateMainFrame()
         text = "Contribute to bounty on %s\nEnter amount:",
         button1 = "Add Gold", button2 = "Cancel", button3 = "Add Points",
         hasEditBox = true, maxLetters = 10,
-        OnAccept = function(self, data)
-            local val = tonumber(self.EditBox:GetText())
-            if val and val > 0 and data then Deadpool:ContributeToBounty(data, val, "gold") end
+        OnShow = function(self) self:SetFrameStrata("TOOLTIP") end,
+        OnAccept = function(self)
+            local eb = self.editBox or self.EditBox
+            local val = tonumber(eb and eb:GetText())
+            local target = self.data
+            if val and val > 0 and target then Deadpool:ContributeToBounty(target, val, "gold") end
         end,
-        OnAlt = function(self, data)
-            local val = tonumber(self.EditBox:GetText())
-            if val and val > 0 and data then Deadpool:ContributeToBounty(data, val, "points") end
+        OnAlt = function(self)
+            local eb = self.editBox or self.EditBox
+            local val = tonumber(eb and eb:GetText())
+            local target = self.data
+            if val and val > 0 and target then Deadpool:ContributeToBounty(target, val, "points") end
         end,
         EditBoxOnEnterPressed = function(self)
-            local val = tonumber(self:GetParent().EditBox:GetText())
-            local data = self:GetParent().data
+            local parent = self:GetParent()
+            local eb = parent.editBox or parent.EditBox
+            local val = tonumber(eb and eb:GetText())
+            local data = parent.data
             if val and val > 0 and data then Deadpool:ContributeToBounty(data, val, "gold") end
-            self:GetParent():Hide()
+            parent:Hide()
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
@@ -367,19 +385,26 @@ function UI:CreateMainFrame()
         text = "Edit max kills for bounty on %s\nEnter new kill target:",
         button1 = "Save", button2 = "Cancel",
         hasEditBox = true, maxLetters = 6,
-        OnAccept = function(self, data)
-            local val = tonumber(self.EditBox:GetText())
-            if val and val >= 1 and data then Deadpool:EditBountyKills(data, val) end
+        OnShow = function(self)
+            self:SetFrameStrata("TOOLTIP")
+            local target = self.data
+            local bounty = target and Deadpool.db.bounties[target]
+            local eb = self.editBox or self.EditBox
+            if bounty and eb then eb:SetText(tostring(bounty.maxKills or 10)) end
+        end,
+        OnAccept = function(self)
+            local eb = self.editBox or self.EditBox
+            local val = tonumber(eb and eb:GetText())
+            local target = self.data
+            if val and val >= 1 and target then Deadpool:EditBountyKills(target, val) end
         end,
         EditBoxOnEnterPressed = function(self)
-            local val = tonumber(self:GetParent().EditBox:GetText())
-            local data = self:GetParent().data
+            local parent = self:GetParent()
+            local eb = parent.editBox or parent.EditBox
+            local val = tonumber(eb and eb:GetText())
+            local data = parent.data
             if val and val >= 1 and data then Deadpool:EditBountyKills(data, val) end
-            self:GetParent():Hide()
-        end,
-        OnShow = function(self, data)
-            local bounty = data and Deadpool.db.bounties[data]
-            if bounty then self.EditBox:SetText(tostring(bounty.maxKills or 10)) end
+            parent:Hide()
         end,
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
@@ -1146,20 +1171,81 @@ function UI:RenderEnemies()
 end
 
 ----------------------------------------------------------------------
--- Scoreboard tab
+-- Scoreboard tab (with clickable sort headers)
 ----------------------------------------------------------------------
+UI._scoreboardSort = "totalPoints"
+
 function UI:RenderScoreboard()
-    self:SetHeaders(
-        { text = "#",           x = 4,   w = 30 },
-        { text = "Player",      x = 36,  w = 180 },
-        { text = "Points",      x = 218, w = 100 },
-        { text = "Total Kills", x = 320, w = 100 },
-        { text = "KOS Kills",   x = 422, w = 100 },
-        { text = "Bounty Kills", x = 524, w = 110 },
-        { text = "PvP Kills",   x = 636, w = 100 },
-        { text = "Best Streak", x = 738, w = 120 }
-    )
-    local data = Deadpool:GetScoreboardSorted("totalPoints")
+    local sortField = UI._scoreboardSort or "totalPoints"
+    local headers = {
+        { text = "#",            x = 4,   w = 30 },
+        { text = "Player",       x = 36,  w = 160 },
+        { text = "Points",       x = 198, w = 80,  sort = "totalPoints" },
+        { text = "Total Kills",  x = 280, w = 80,  sort = "totalKills" },
+        { text = "KOS",          x = 362, w = 60,  sort = "kosKills" },
+        { text = "Bounty",       x = 424, w = 60,  sort = "bountyKills" },
+        { text = "PvP",          x = 486, w = 60,  sort = "randomKills" },
+        { text = "Streak",       x = 548, w = 55,  sort = "bestStreak" },
+        { text = "Assists",      x = 605, w = 55,  sort = "assists" },
+        { text = "Ach Pts",      x = 662, w = 60 },
+    }
+
+    -- Build clickable headers
+    self:SetHeaders(unpack(headers))
+
+    -- Build clickable sort buttons over headers
+    if not contentArea._sortButtons then contentArea._sortButtons = {} end
+    -- Hide old sort buttons
+    for _, btn in pairs(contentArea._sortButtons) do btn:Hide() end
+
+    for i, def in ipairs(headers) do
+        if def.sort then
+            local sortKey = def.sort
+            if not contentArea._sortButtons[i] then
+                local btn = CreateFrame("Button", nil, contentArea.headerFrame)
+                contentArea._sortButtons[i] = btn
+            end
+            local btn = contentArea._sortButtons[i]
+            btn:SetSize(def.w, 26)
+            btn:SetPoint("LEFT", contentArea.headerFrame, "LEFT", def.x, 0)
+            btn:Show()
+            btn:SetScript("OnClick", function()
+                if UI._scoreboardSort == sortKey then
+                    UI._scoreboardSortAsc = not UI._scoreboardSortAsc
+                else
+                    UI._scoreboardSort = sortKey
+                    UI._scoreboardSortAsc = false
+                end
+                scrollOffset = 0
+                UI:RenderScoreboard()
+            end)
+            btn:SetScript("OnEnter", function(self)
+                if contentArea.headerLabels and contentArea.headerLabels[i] then
+                    contentArea.headerLabels[i]:SetTextColor(1, 1, 1)
+                end
+            end)
+            btn:SetScript("OnLeave", function(self)
+                if contentArea.headerLabels and contentArea.headerLabels[i] then
+                    local r, g, b = Deadpool.modules.Theme:Accent()
+                    contentArea.headerLabels[i]:SetTextColor(r, g, b)
+                end
+            end)
+            -- Show sort arrow on active column
+            if sortField == sortKey and contentArea.headerLabels and contentArea.headerLabels[i] then
+                local arrow = ascending and " ^" or " v"
+                contentArea.headerLabels[i]:SetText(def.text .. arrow)
+            end
+        end
+    end
+
+    local ascending = UI._scoreboardSortAsc or false
+    local data = Deadpool:GetScoreboardSorted(sortField)
+    if ascending then
+        local reversed = {}
+        for i = #data, 1, -1 do reversed[#reversed + 1] = data[i] end
+        data = reversed
+    end
+
     if filterText ~= "" then
         local f = {}
         for _, e in ipairs(data) do
@@ -1167,6 +1253,11 @@ function UI:RenderScoreboard()
         end
         data = f
     end
+
+    -- Get local player's achievement points for display
+    local AM = Deadpool.modules.Achievements
+    local myName = Deadpool:GetPlayerFullName()
+
     local numRows = #data
     local visibleRows = #contentArea.rows
     scrollMaxOffset = math.max(0, numRows - visibleRows)
@@ -1183,23 +1274,36 @@ function UI:RenderScoreboard()
             elseif idx == 3 then rk = "|cFFCD7F323|r" end
             SetCol(row, 1, 4, 30, rk, "CENTER")
             local pn = Deadpool:ShortName(e._key)
-            if e._key == Deadpool:GetPlayerFullName() then pn = Deadpool.colors.cyan .. pn .. "|r" end
-            SetCol(row, 2, 36, 180, pn)
-            SetCol(row, 3, 218, 100, Deadpool.colors.yellow .. (e.totalPoints or 0) .. "|r")
-            SetCol(row, 4, 320, 100, tostring(e.totalKills or 0))
-            SetCol(row, 5, 422, 100, tostring(e.kosKills or 0))
-            SetCol(row, 6, 524, 110, tostring(e.bountyKills or 0))
-            SetCol(row, 7, 636, 100, tostring(e.randomKills or 0))
-            SetCol(row, 8, 738, 120, tostring(e.bestStreak or 0))
+            if e._key == myName then pn = Deadpool.colors.cyan .. pn .. "|r" end
+            SetCol(row, 2, 36, 160, pn)
+            SetCol(row, 3, 198, 80, Deadpool.colors.yellow .. (e.totalPoints or 0) .. "|r")
+            SetCol(row, 4, 280, 80, tostring(e.totalKills or 0))
+            SetCol(row, 5, 362, 60, tostring(e.kosKills or 0))
+            SetCol(row, 6, 424, 60, tostring(e.bountyKills or 0))
+            SetCol(row, 7, 486, 60, tostring(e.randomKills or 0))
+            SetCol(row, 8, 548, 55, tostring(e.bestStreak or 0))
+            -- Assists column (col 9 reuses col space)
+            -- Achievement points (only known for local player)
+            local achPtsStr = Deadpool.colors.grey .. "-|r"
+            if e._key == myName and AM then
+                achPtsStr = Deadpool.colors.gold .. AM:GetTotalPoints() .. "|r"
+            end
             row.tooltipFunc = function()
                 GameTooltip:AddLine(Deadpool:ShortName(e._key), 1, 1, 1)
                 GameTooltip:AddLine("Total Points: " .. (e.totalPoints or 0), 1, 1, 0)
                 GameTooltip:AddLine("Total Kills: " .. (e.totalKills or 0), 0.7, 0.7, 0.7)
+                GameTooltip:AddLine("Assists: " .. (e.assists or 0), 0.5, 0.8, 1)
+                if e._key == myName and AM then
+                    GameTooltip:AddLine("Achievement Points: " .. AM:GetTotalPoints(), 1, 0.84, 0)
+                    GameTooltip:AddLine("Achievements: " .. AM:GetEarnedCount() .. "/" .. AM:GetTotalCount(), 0.6, 0.6, 0.6)
+                end
                 GameTooltip:AddLine("Last Kill: " .. Deadpool:TimeAgo(e.lastKill), 0.5, 0.5, 0.5)
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Click column headers to sort", 0.4, 0.4, 0.4)
             end
         else row:Hide(); row.data = nil end
     end
-    statusText:SetText(Deadpool:TableCount(Deadpool.demoData:GetMergedScoreboard()) .. " guild members ranked")
+    statusText:SetText(Deadpool:TableCount(Deadpool.demoData:GetMergedScoreboard()) .. " guild members ranked | Sorted by: " .. sortField)
 end
 
 ----------------------------------------------------------------------

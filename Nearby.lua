@@ -43,6 +43,13 @@ function Nearby:TrackPlayer(name, guid, class, race, level, guild, isStealth)
     local fullName = Deadpool:NormalizeName(name)
     if not fullName then return end
 
+    -- Pull persisted info from enemy sheet if we don't have it from live data
+    local enemy = Deadpool.db.enemySheet and Deadpool.db.enemySheet[fullName]
+    if not class and enemy and enemy.class then class = enemy.class end
+    if (not level or level == 0) and enemy and enemy.level and enemy.level > 0 then level = enemy.level end
+    if not race and enemy and enemy.race then race = enemy.race end
+    if not guild and enemy and enemy.guild then guild = enemy.guild end
+
     local isNew = not tracked[fullName]
     local existing = tracked[fullName]
     if existing then
@@ -117,16 +124,12 @@ function Nearby:ScanUnit(unitId)
             tracked[fullName].distance = dist
             tracked[fullName].unitId = unitId
         end
-        -- Update enemy sheet with guild info for war guild detection
-        if guild and guild ~= "" then
-            local enemy = Deadpool:GetOrCreateEnemy(fullName)
-            if not enemy.guild or enemy.guild ~= guild then
-                enemy.guild = guild
-            end
-            if classFile then enemy.class = classFile end
-            if race then enemy.race = race end
-            if level and level > 0 then enemy.level = level end
-        end
+        -- Persist all learned info to enemy sheet (available for future sessions)
+        local enemy = Deadpool:GetOrCreateEnemy(fullName)
+        if classFile then enemy.class = classFile end
+        if race then enemy.race = race end
+        if level and level > 0 then enemy.level = level end
+        if guild and guild ~= "" then enemy.guild = guild end
     end
 end
 
@@ -239,6 +242,27 @@ function Nearby:GetSorted()
 end
 
 ----------------------------------------------------------------------
+-- XML PreClick handler: called from DeadpoolNearbyRowTemplate
+-- Sets macro text BEFORE the secure action fires
+----------------------------------------------------------------------
+function Nearby:RowPreClick(self, button)
+    local name = Nearby._buttonNames and Nearby._buttonNames[self.id]
+    if name and name ~= "" then
+        if button == "LeftButton" then
+            if IsShiftKeyDown() then
+                if not InCombatLockdown() then
+                    self:SetAttribute("macrotext", "/focus " .. name)
+                end
+            else
+                if not InCombatLockdown() then
+                    self:SetAttribute("macrotext", "/targetexact " .. name)
+                end
+            end
+        end
+    end
+end
+
+----------------------------------------------------------------------
 -- Widget: Build the sidecar frame
 ----------------------------------------------------------------------
 function Nearby:BuildWidget()
@@ -325,22 +349,22 @@ function Nearby:BuildWidget()
     contentFrame:SetPoint("TOPLEFT", titleBar, "BOTTOMLEFT", 0, 0)
     contentFrame:SetPoint("TOPRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
     contentFrame:SetHeight(1)  -- will grow dynamically
-    contentFrame:EnableMouse(true)
+    contentFrame:EnableMouseWheel(true)
     contentFrame:SetScript("OnMouseWheel", function(self, delta)
         scrollOffset = scrollOffset - delta
         if scrollOffset < 0 then scrollOffset = 0 end
         Nearby:UpdateWidget()
     end)
 
-    -- Pre-create row frames
+    -- Pre-create row frames using XML template (SecureActionButton with PreClick)
     rows = {}
     for i = 1, MAX_ROWS do
-        local row = CreateFrame("Button", nil, contentFrame)
+        local row = CreateFrame("Button", "DeadpoolNearbyRow" .. i, widget, "DeadpoolNearbyRowTemplate")
         row:SetHeight(ROW_HEIGHT)
         row:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 0, -((i - 1) * ROW_HEIGHT))
         row:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", 0, -((i - 1) * ROW_HEIGHT))
-        row:EnableMouse(true)
-        row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        row:SetFrameLevel(widget:GetFrameLevel() + 10)
+        row.id = i
 
         -- Background for alternating rows
         local bg = row:CreateTexture(nil, "BACKGROUND")
@@ -392,7 +416,8 @@ function Nearby:BuildWidget()
         timerText:SetJustifyH("RIGHT")
         row._timerText = timerText
 
-        row:SetScript("OnClick", function(self, button)
+        -- Right-click context menu
+        row:SetScript("PostClick", function(self, button)
             if button == "RightButton" and self._data then
                 Nearby:ShowContextMenu(self)
             end
@@ -418,6 +443,8 @@ function Nearby:BuildWidget()
                 local isKOS = Deadpool:IsKOS(d.fullName)
                 if isKOS then GameTooltip:AddLine("KILL ON SIGHT", 1, 0, 0) end
                 GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Left-click to target", 0.5, 0.5, 0.5)
+                GameTooltip:AddLine("Shift+click to focus", 0.5, 0.5, 0.5)
                 GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
                 GameTooltip:Show()
             end
@@ -528,6 +555,43 @@ function Nearby:UpdateWidget()
     local data = self:GetSorted()
     local count = #data
     local now = time()
+    local inCombat = InCombatLockdown()
+
+    -- Refresh distances from nameplates every tick
+    if not inCombat then
+        -- Clear stale unitIds (nameplate gone) but keep distance as last-known
+        for fullName, d in pairs(tracked) do
+            if d.unitId and not UnitExists(d.unitId) then
+                d.unitId = nil
+                d.distance = nil
+            end
+        end
+        -- Scan current nameplates for fresh data
+        for i = 1, 40 do
+            local unit = "nameplate" .. i
+            if UnitExists(unit) and UnitIsPlayer(unit) and UnitIsEnemy("player", unit) then
+                local uName, uRealm = UnitName(unit)
+                if uName then
+                    local fn = Deadpool:NormalizeName(uRealm and uRealm ~= "" and (uName .. "-" .. uRealm) or uName)
+                    if fn and tracked[fn] then
+                        tracked[fn].unitId = unit
+                        if CheckInteractDistance(unit, 1) then
+                            tracked[fn].distance = 10
+                        elseif CheckInteractDistance(unit, 2) then
+                            tracked[fn].distance = 11
+                        elseif CheckInteractDistance(unit, 4) then
+                            tracked[fn].distance = 28
+                        else
+                            tracked[fn].distance = 40
+                        end
+                    end
+                end
+            end
+        end
+        -- Re-sort after distance refresh
+        data = self:GetSorted()
+        count = #data
+    end
 
     -- Update count badge
     if count > 0 then
@@ -547,6 +611,9 @@ function Nearby:UpdateWidget()
     contentFrame:SetHeight(math.max(contentHeight, 1))
     widget:SetHeight(22 + contentHeight)
 
+    -- Initialize button name lookup (like Spy.ButtonName[])
+    if not Nearby._buttonNames then Nearby._buttonNames = {} end
+
     for i = 1, MAX_ROWS do
         local row = rows[i]
         local dataIdx = i + scrollOffset
@@ -555,8 +622,14 @@ function Nearby:UpdateWidget()
             row._data = d
             row:Show()
 
-            -- Update target unit (only out of combat — persists into combat)
-            -- DISABLED: secure targeting causing disconnects, needs proper implementation
+            -- Set button name for PreClick lookup (matches Spy's pattern)
+            local shortName = d.name or d.fullName:match("^(.-)%-")
+            Nearby._buttonNames[row.id] = shortName
+
+            -- Pre-set targeting macro (only out of combat)
+            if not inCombat and shortName then
+                row:SetAttribute("macrotext", "/targetexact " .. shortName)
+            end
 
             -- KOS indicator (red bar) or Aggressive indicator (orange bar)
             local isKOS = Deadpool:IsKOS(d.fullName)
@@ -582,17 +655,21 @@ function Nearby:UpdateWidget()
                 row._bg:SetColorTexture(0, 0, 0, 0)
             end
 
+            -- Dim players we have no range info on (show as "?"), but never dim stealthed
+            local hasRange = d.distance and d.distance < 999
+            local rowAlpha = (hasRange or d.isStealth) and 1.0 or 0.4
+
             -- Class dot color (parse from |cFFRRGGBB string)
             local ccStr = Deadpool.classColors and Deadpool.classColors[d.class]
             if ccStr then
                 local r, g, b = ccStr:match("|cFF(%x%x)(%x%x)(%x%x)")
                 if r then
-                    row._classDot:SetColorTexture(tonumber(r, 16)/255, tonumber(g, 16)/255, tonumber(b, 16)/255, 1)
+                    row._classDot:SetColorTexture(tonumber(r, 16)/255, tonumber(g, 16)/255, tonumber(b, 16)/255, rowAlpha)
                 else
-                    row._classDot:SetColorTexture(0.5, 0.5, 0.5, 1)
+                    row._classDot:SetColorTexture(0.5, 0.5, 0.5, rowAlpha)
                 end
             else
-                row._classDot:SetColorTexture(0.5, 0.5, 0.5, 1)
+                row._classDot:SetColorTexture(0.5, 0.5, 0.5, rowAlpha)
             end
 
             -- Name (class-colored)
@@ -602,7 +679,7 @@ function Nearby:UpdateWidget()
             else
                 row._nameText:SetText(shortName)
             end
-            row._nameText:SetTextColor(t.text[1], t.text[2], t.text[3])
+            row._nameText:SetAlpha(rowAlpha)
 
             -- Level + distance display
             local lvlStr = ""
@@ -621,6 +698,7 @@ function Nearby:UpdateWidget()
                 lvlStr = lvlStr .. Deadpool.colors.grey .. " ~" .. d.distance .. "yd|r"
             end
             row._lvlText:SetText(lvlStr)
+            row._lvlText:SetAlpha(rowAlpha)
 
             -- Stealth indicator
             if d.isStealth then
@@ -657,7 +735,11 @@ function Nearby:UpdateWidget()
                 row._timerText:SetText(Deadpool.colors.grey .. remaining .. "s|r")
             end
         else
-            if not InCombatLockdown() then row:Hide() end
+            if not InCombatLockdown() then
+                row:Hide()
+                row:SetAttribute("macrotext", "/targetexact nil")
+            end
+            Nearby._buttonNames[row.id] = nil
             row._data = nil
         end
     end
@@ -673,6 +755,139 @@ function Nearby:ScanAllNameplates()
             self:ScanUnit(unit)
         end
     end
+end
+
+----------------------------------------------------------------------
+-- Directional indicator: arrow pointing toward targeted enemy
+-- Uses nameplate screen position; when off-screen, shows edge arrow
+----------------------------------------------------------------------
+local dirArrow, dirArrowText
+local lastKnownPlateX, lastKnownPlateY  -- remember last position for when plate goes off-screen
+
+function Nearby:BuildDirectionArrow()
+    if dirArrow then return end
+
+    local TM = Deadpool.modules.Theme
+
+    dirArrow = CreateFrame("Frame", "DeadpoolDirArrow", UIParent)
+    dirArrow:SetSize(48, 48)
+    dirArrow:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    dirArrow:SetFrameStrata("TOOLTIP")
+    dirArrow:SetFrameLevel(200)
+    dirArrow:Hide()
+
+    -- Draw arrow using a simple colored triangle via triangles API or just a rotated texture
+    -- Use the generic raid arrow which exists in all clients
+    local tex = dirArrow:CreateTexture(nil, "ARTWORK")
+    tex:SetTexture("Interface\\RAIDFRAME\\ReadyCheck-Ready")
+    tex:SetSize(48, 48)
+    tex:SetPoint("CENTER")
+    tex:SetVertexColor(1, 0, 0, 1)
+    dirArrow._tex = tex
+
+    -- Create a simple arrow shape using the white8x8 texture rotated
+    -- Actually, let's just use a visible text arrow and make it big
+    local arrowLabel = dirArrow:CreateFontString(nil, "OVERLAY")
+    arrowLabel:SetFont(TM:GetFont(36, "OUTLINE"))
+    arrowLabel:SetPoint("CENTER", 0, 0)
+    arrowLabel:SetText(">")
+    arrowLabel:SetTextColor(1, 0.1, 0.1, 1)
+    dirArrow._arrowLabel = arrowLabel
+    tex:Hide()  -- hide the checkmark, use text arrow instead
+
+    -- Name label
+    dirArrowText = dirArrow:CreateFontString(nil, "OVERLAY")
+    dirArrowText:SetFont(TM:GetFont(11, "OUTLINE"))
+    dirArrowText:SetPoint("TOP", dirArrow, "BOTTOM", 0, -2)
+    dirArrowText:SetTextColor(1, 0.3, 0.3, 1)
+end
+
+function Nearby:UpdateDirectionArrow()
+    if not dirArrow then return end
+
+    -- Only show for enemy player targets
+    if not UnitExists("target") or not UnitIsPlayer("target") or not UnitIsEnemy("player", "target") then
+        dirArrow:Hide()
+        lastKnownPlateX = nil
+        lastKnownPlateY = nil
+        return
+    end
+
+    local targetName = UnitName("target")
+    if not targetName then dirArrow:Hide() return end
+
+    local fullName = Deadpool:NormalizeName(targetName)
+
+    -- Find the nameplate for the current target
+    local plate = C_NamePlate.GetNamePlateForUnit("target")
+    local plateX, plateY
+    if plate and plate:IsShown() then
+        plateX, plateY = plate:GetCenter()
+    end
+
+    local screenW = UIParent:GetWidth()
+    local screenH = UIParent:GetHeight()
+    local scale = UIParent:GetEffectiveScale()
+
+    if plateX and plateY then
+        -- Plate is visible — remember position
+        lastKnownPlateX = plateX
+        lastKnownPlateY = plateY
+
+        -- Check if it's reasonably on-screen (not at edge)
+        local margin = 80
+        local onScreen = plateX > margin and plateX < (screenW - margin)
+            and plateY > margin and plateY < (screenH - margin)
+
+        if onScreen then
+            dirArrow:Hide()
+            return
+        end
+    end
+
+    -- Use last known position or hide if we never had one
+    local useX = plateX or lastKnownPlateX
+    local useY = plateY or lastKnownPlateY
+    if not useX or not useY then
+        dirArrow:Hide()
+        return
+    end
+
+    local centerX = screenW / 2
+    local centerY = screenH / 2
+    local dx = useX - centerX
+    local dy = useY - centerY
+    local angle = math.atan2(dy, dx)
+
+    -- Position arrow on screen edge pointing toward target
+    local edgeX = centerX + math.cos(angle) * (math.min(centerX, centerY) - 50)
+    local edgeY = centerY + math.sin(angle) * (math.min(centerX, centerY) - 50)
+    edgeX = math.max(30, math.min(screenW - 30, edgeX))
+    edgeY = math.max(30, math.min(screenH - 30, edgeY))
+
+    dirArrow:ClearAllPoints()
+    dirArrow:SetPoint("CENTER", UIParent, "BOTTOMLEFT", edgeX, edgeY)
+
+    -- Set arrow direction text based on angle
+    local deg = math.deg(angle) % 360
+    local arrowChar
+    if deg >= 337.5 or deg < 22.5 then arrowChar = ">"
+    elseif deg >= 22.5 and deg < 67.5 then arrowChar = ">"  -- up-right
+    elseif deg >= 67.5 and deg < 112.5 then arrowChar = "^"
+    elseif deg >= 112.5 and deg < 157.5 then arrowChar = "<"  -- up-left
+    elseif deg >= 157.5 and deg < 202.5 then arrowChar = "<"
+    elseif deg >= 202.5 and deg < 247.5 then arrowChar = "<"  -- down-left
+    elseif deg >= 247.5 and deg < 292.5 then arrowChar = "v"
+    else arrowChar = ">"  -- down-right
+    end
+    dirArrow._arrowLabel:SetText(arrowChar)
+
+    -- Show target name
+    local d = fullName and tracked[fullName]
+    local displayName = d and d.class and Deadpool:ClassColor(d.class, d.name or targetName) or targetName
+    dirArrowText:SetText(displayName)
+
+    dirArrow:Show()
 end
 
 ----------------------------------------------------------------------
@@ -701,11 +916,13 @@ function Nearby:Init()
 
     -- Build the widget
     self:BuildWidget()
+    self:BuildDirectionArrow()
 
     -- Periodic update ticker
     if C_Timer and C_Timer.NewTicker then
         C_Timer.NewTicker(UPDATE_INTERVAL, function()
             Nearby:UpdateWidget()
+            Nearby:UpdateDirectionArrow()
             -- Also update count text even when minimized
             if isMinimized then
                 local data = Nearby:GetSorted()

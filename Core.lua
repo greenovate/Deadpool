@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------
 
 Deadpool = {}
-Deadpool.version = "1.5.0"
+Deadpool.version = "1.6.0"
 Deadpool.prefix = "DEADPOOL"
 Deadpool.modules = {}
 
@@ -201,6 +201,11 @@ end
 
 function Deadpool:IsGuildMember(fullName)
     if not fullName then return false end
+    -- You are always a member of your own guild
+    if fullName == self:GetPlayerFullName() then return true end
+    local myShort = UnitName("player")
+    local checkShort = fullName:match("^(.-)%-") or fullName
+    if myShort and checkShort == myShort then return true end
     -- Refresh cache every 5 minutes
     if (time() - rosterCacheTime) > 300 then
         self:RefreshGuildRoster()
@@ -600,6 +605,8 @@ SlashCmdList["DEADPOOL"] = function(msg)
         if Deadpool.modules.Achievements then
             Deadpool.modules.Achievements:Restore()
         end
+    elseif cmd == "recalc" then
+        Deadpool:RecalcPoints()
     elseif cmd == "help" then
         Deadpool:PrintHelp()
     elseif cmd == "diag" then
@@ -720,6 +727,45 @@ function Deadpool:PrintKOSList()
 end
 
 ----------------------------------------------------------------------
+-- Recalculate points from kill log (fixes zero-point kills)
+----------------------------------------------------------------------
+function Deadpool:RecalcPoints()
+    local myName = self:GetPlayerFullName()
+    local killLog = self.db.killLog
+    local fixed = 0
+    local totalAdded = 0
+    local gc = self:GetPointsConfig()
+
+    for _, entry in ipairs(killLog) do
+        if entry.killer == myName and (entry.points or 0) == 0 then
+            -- Recalculate what points should have been
+            local killType = entry.killType or "random"
+            local pts = 0
+            if killType == "bounty" then
+                pts = gc.pointsPerBountyKill or 100
+            elseif killType == "kos" then
+                pts = gc.pointsPerKOSKill or 25
+            else
+                pts = gc.pointsPerKill or 5
+            end
+            -- Apply to entry and score
+            entry.points = pts
+            totalAdded = totalAdded + pts
+            fixed = fixed + 1
+        end
+    end
+
+    if fixed > 0 then
+        local score = self:GetOrCreateScore(myName)
+        score.totalPoints = (score.totalPoints or 0) + totalAdded
+        self:Print(self.colors.green .. "Recalculated:|r " .. fixed .. " kills fixed, +" .. totalAdded .. " pts added.")
+    else
+        self:Print(self.colors.grey .. "No zero-point kills found to fix.|r")
+    end
+    if self.RefreshUI then self:RefreshUI() end
+end
+
+----------------------------------------------------------------------
 -- Initialization
 ----------------------------------------------------------------------
 function Deadpool:Init()
@@ -739,8 +785,14 @@ function Deadpool:Init()
     -- unreliable at ADDON_LOADED time and will false-wipe all data.
 
     -- On fresh login, guild info arrives after PLAYER_ENTERING_WORLD
+    -- Only check guild identity ONCE on initial login — not on every
+    -- zone change. Repeated checks risk false-wiping the shared
+    -- account-wide DB if GetGuildInfo is transiently nil.
+    local guildCheckDone = false
     self:RegisterEvent("PLAYER_ENTERING_WORLD", function()
-        C_Timer.After(3, function()
+        if guildCheckDone then return end
+        guildCheckDone = true
+        C_Timer.After(5, function()
             Deadpool:CheckGuildIdentity()
             if Deadpool.RefreshUI then Deadpool:RefreshUI() end
         end)

@@ -66,15 +66,15 @@ local DEFAULTS = {
 }
 
 function Deadpool:InitDB()
-    -- Per-character saved data (primary store)
-    if not DeadpoolCharDB then
-        DeadpoolCharDB = {}
+    -- Account-wide saved data (primary store — shared across all characters)
+    if not DeadpoolDB then
+        DeadpoolDB = {}
     end
-    self:MergeDefaults(DeadpoolCharDB, DEFAULTS)
-    self.db = DeadpoolCharDB
+    self:MergeDefaults(DeadpoolDB, DEFAULTS)
+    self.db = DeadpoolDB
 
-    -- Migrate from old account-wide DeadpoolDB if this character hasn't been migrated
-    self:MigrateFromAccountDB()
+    -- One-time migration: merge any per-character data into account-wide DB
+    self:MigrateFromCharDB()
 end
 
 function Deadpool:MergeDefaults(target, defaults)
@@ -166,65 +166,46 @@ function Deadpool:WipeGuildData(reason)
 end
 
 ----------------------------------------------------------------------
--- Migration: one-time move from old account-wide DeadpoolDB
--- Copies data to this character's DeadpoolCharDB, then marks done.
+-- Migration: one-time merge of per-character DeadpoolCharDB into
+-- the account-wide DeadpoolDB so all alts share the same data.
 ----------------------------------------------------------------------
-function Deadpool:MigrateFromAccountDB()
-    if self.db._migratedFromAccount then return end
-    if not DeadpoolDB then return end
-
-    -- Check for old flat-format data at top level
-    local oldDataKeys = {
-        "kosList", "bounties", "killLog", "deathLog",
-        "enemySheet", "scoreboard", "guildConfig",
-        "syncVersion", "lastSync",
-    }
-
-    -- Try old flat format first
-    local migrated = 0
-    for _, key in ipairs(oldDataKeys) do
-        if DeadpoolDB[key] ~= nil then
-            local src = DeadpoolDB[key]
-            if type(src) == "table" then
-                if type(self.db[key]) ~= "table" or not next(self.db[key]) then
-                    self.db[key] = src
-                    migrated = migrated + 1
-                end
-            else
-                self.db[key] = src
-                migrated = migrated + 1
-            end
+function Deadpool:MigrateFromCharDB()
+    if not DeadpoolCharDB then return end
+    if DeadpoolCharDB._mergedToAccount then return end
+    -- Nothing to migrate if the per-char DB is empty
+    local hasData = false
+    for k in pairs(DeadpoolCharDB) do
+        if k ~= "_migratedFromAccount" and k ~= "_mergedToAccount" then
+            hasData = true
+            break
         end
     end
+    if not hasData then
+        DeadpoolCharDB._mergedToAccount = true
+        return
+    end
 
-    -- Also try guild-keyed format (from the previous guild-bucket system)
-    if DeadpoolDB.guilds and next(DeadpoolDB.guilds) then
-        -- Find the bucket matching our current guild, or take the only one
-        local guildName = GetGuildInfo("player")
-        local realm = GetRealmName() or "Unknown"
-        local currentKey = guildName and (guildName .. "-" .. realm) or nil
+    local dataKeys = {
+        "kosList", "bounties", "enemySheet", "scoreboard",
+    }
+    local migrated = 0
 
-        local sourceKey = currentKey and DeadpoolDB.guilds[currentKey] and currentKey
-        if not sourceKey then
-            -- Take the first (and likely only) guild bucket
-            for k in pairs(DeadpoolDB.guilds) do
-                sourceKey = k
-                break
-            end
-        end
-
-        if sourceKey and DeadpoolDB.guilds[sourceKey] then
-            local bucket = DeadpoolDB.guilds[sourceKey]
-            for _, key in ipairs(oldDataKeys) do
-                if bucket[key] ~= nil then
-                    local src = bucket[key]
-                    if type(src) == "table" then
-                        if type(self.db[key]) ~= "table" or not next(self.db[key]) then
-                            self.db[key] = src
-                            migrated = migrated + 1
-                        end
-                    else
-                        self.db[key] = src
+    -- Merge key-value tables: union, preferring newest entry
+    for _, key in ipairs(dataKeys) do
+        local src = DeadpoolCharDB[key]
+        if type(src) == "table" and next(src) then
+            if type(self.db[key]) ~= "table" then self.db[key] = {} end
+            for name, entry in pairs(src) do
+                local existing = self.db[key][name]
+                if not existing then
+                    self.db[key][name] = entry
+                    migrated = migrated + 1
+                else
+                    -- For KOS/bounties: keep whichever was added later
+                    local srcTime = entry.addedDate or entry.placedDate or entry.firstSeen or 0
+                    local dstTime = existing.addedDate or existing.placedDate or existing.firstSeen or 0
+                    if srcTime > dstTime then
+                        self.db[key][name] = entry
                         migrated = migrated + 1
                     end
                 end
@@ -232,21 +213,70 @@ function Deadpool:MigrateFromAccountDB()
         end
     end
 
-    -- Migrate settings
-    if DeadpoolDB.settings then
-        self:MergeDefaults(self.db.settings, DeadpoolDB.settings)
-        -- Copy existing values that differ from defaults
-        for k, v in pairs(DeadpoolDB.settings) do
-            if self.db.settings[k] == nil or (type(v) ~= "table") then
+    -- Merge ordered lists (killLog, deathLog): combine and deduplicate by timestamp+victim+killer
+    for _, key in ipairs({"killLog", "deathLog"}) do
+        local src = DeadpoolCharDB[key]
+        if type(src) == "table" and #src > 0 then
+            if type(self.db[key]) ~= "table" then self.db[key] = {} end
+            -- Build index of existing entries for dedup
+            local seen = {}
+            for _, e in ipairs(self.db[key]) do
+                local sig = tostring(e.time or 0) .. (e.victim or "") .. (e.killer or "")
+                seen[sig] = true
+            end
+            for _, e in ipairs(src) do
+                local sig = tostring(e.time or 0) .. (e.victim or "") .. (e.killer or "")
+                if not seen[sig] then
+                    table.insert(self.db[key], e)
+                    migrated = migrated + 1
+                end
+            end
+            -- Re-sort newest first
+            table.sort(self.db[key], function(a, b)
+                return (a.time or 0) > (b.time or 0)
+            end)
+            -- Trim to max size
+            local max = (self.db.settings and self.db.settings.maxKillLogSize) or 500
+            while #self.db[key] > max do
+                table.remove(self.db[key])
+            end
+        end
+    end
+
+    -- Take higher syncVersion
+    local charVer = DeadpoolCharDB.syncVersion or 0
+    if charVer > (self.db.syncVersion or 0) then
+        self.db.syncVersion = charVer
+    end
+
+    -- Merge guildConfig: take newest updatedAt
+    if type(DeadpoolCharDB.guildConfig) == "table" then
+        local charCfgTime = DeadpoolCharDB.guildConfig.updatedAt or 0
+        local dbCfgTime = (self.db.guildConfig and self.db.guildConfig.updatedAt) or 0
+        if charCfgTime > dbCfgTime then
+            self.db.guildConfig = DeadpoolCharDB.guildConfig
+            migrated = migrated + 1
+        end
+    end
+
+    -- Merge settings (per-char settings win for personal prefs)
+    if type(DeadpoolCharDB.settings) == "table" then
+        for k, v in pairs(DeadpoolCharDB.settings) do
+            if type(v) ~= "table" then
                 self.db.settings[k] = v
             end
         end
     end
 
-    self.db._migratedFromAccount = true
+    -- Preserve guild identity from the character DB (authoritative source)
+    if DeadpoolCharDB._guildName and DeadpoolCharDB._guildName ~= "" then
+        self.db._guildName = DeadpoolCharDB._guildName
+    end
+
+    DeadpoolCharDB._mergedToAccount = true
 
     if migrated > 0 then
-        self:Print(self.colors.green .. "Data migrated to per-character storage.|r")
+        self:Print(self.colors.green .. "Character data merged into shared account storage. All your alts now share KOS, bounties, and kill data.|r")
     end
 end
 

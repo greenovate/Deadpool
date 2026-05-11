@@ -240,7 +240,8 @@ function Deadpool:PlaceBounty(nameOrFullName, amount, maxKills, bountyType)
         local myName = self:GetPlayerFullName()
         local score = self:GetOrCreateScore(myName)
         if (score.totalPoints or 0) < amount then
-            self:Print(self.colors.red .. "Not enough points!|r You have " .. (score.totalPoints or 0) .. " pts.")
+            self:Print(self.colors.red .. "NOT ENOUGH POINTS!|r You need " .. amount .. " pts but have " .. (score.totalPoints or 0) .. " pts.")
+            self:Print(self.colors.yellow .. "Tip:|r Use Gold Bounty instead, or earn more points from kills/quests/achievements.")
             return false
         end
         score.totalPoints = score.totalPoints - amount
@@ -442,15 +443,18 @@ function Deadpool:AwardKillPoints(killerFullName, victimFullName, killType, vict
         score.randomKills = (score.randomKills or 0) + 1
     end
 
-    -- Level-based modifier: relative to YOUR level
-    local myLevel = UnitLevel("player") or 0
+    -- Level-based modifier: relative to the KILLER's level
+    -- For local kills, use UnitLevel. For synced remote kills, skip level
+    -- modifiers since we don't know the killer's actual level.
+    local isLocalKill = (killerFullName == self:GetPlayerFullName())
+    local killerLevel = isLocalKill and (UnitLevel("player") or 0) or 0
     local lowbieRange = gc.pointsLowbieRange or 5
     local lowbieReduction = gc.pointsLowbieReduction or 0.5
     local lowbieFloor = gc.pointsLowbieFloor or 1
     local lowbieTier2 = gc.pointsLowbieTier2 or 10
 
-    if victimLevel and victimLevel > 0 and myLevel > 0 then
-        local levelDiff = myLevel - victimLevel  -- positive = victim is lower
+    if victimLevel and victimLevel > 0 and killerLevel > 0 then
+        local levelDiff = killerLevel - victimLevel  -- positive = victim is lower
         if levelDiff > lowbieTier2 then
             -- Far below: floor points
             points = lowbieFloor
@@ -461,9 +465,9 @@ function Deadpool:AwardKillPoints(killerFullName, victimFullName, killType, vict
         -- Within range or higher: full points (no reduction)
     end
 
-    -- Underdog bonus: killing someone higher level than you
-    if victimLevel and victimLevel > 0 and myLevel > 0 and victimLevel > myLevel then
-        local levelDiff = victimLevel - myLevel
+    -- Underdog bonus: killing someone higher level than you (local kills only)
+    if victimLevel and victimLevel > 0 and killerLevel > 0 and victimLevel > killerLevel then
+        local levelDiff = victimLevel - killerLevel
         if levelDiff >= 6 then
             points = math.floor(points * (gc.pointsUnderdogMultiplier6 or 3.0))
         elseif levelDiff >= 3 then
