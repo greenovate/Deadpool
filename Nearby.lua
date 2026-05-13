@@ -841,7 +841,8 @@ function Nearby:UpdateDirectionArrow()
     local plate = C_NamePlate.GetNamePlateForUnit("target")
     local plateX, plateY
     if plate and plate:IsShown() then
-        plateX, plateY = plate:GetCenter()
+        local ok, x, y = pcall(plate.GetCenter, plate)
+        if ok then plateX, plateY = x, y end
     end
 
     local screenW = UIParent:GetWidth()
