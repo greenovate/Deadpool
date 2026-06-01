@@ -572,14 +572,55 @@ function Nearby:ApplyTheme()
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    widget:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.85)
-    widget:SetBackdropBorderColor(t.accent[1] * 0.6, t.accent[2] * 0.6, t.accent[3] * 0.6, 0.8)
+    widget:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.88)
+    widget:SetBackdropBorderColor(t.accent[1] * 0.5, t.accent[2] * 0.5, t.accent[3] * 0.5, 0.6)
 
-    -- Title bar tint (no border, just a subtle accent fill inside the widget)
+    -- Outer glow
+    if not widget._outerGlow then
+        widget._outerGlow = widget:CreateTexture(nil, "BACKGROUND", nil, -1)
+        widget._outerGlow:SetPoint("TOPLEFT", -2, 2)
+        widget._outerGlow:SetPoint("BOTTOMRIGHT", 2, -2)
+        widget._outerGlow:SetTexture("Interface\\Buttons\\WHITE8x8")
+    end
+    widget._outerGlow:SetVertexColor(t.accent[1], t.accent[2], t.accent[3], 0.08)
+
+    -- Gradient overlay
+    if not widget._gradient then
+        widget._gradient = widget:CreateTexture(nil, "BACKGROUND", nil, 1)
+        widget._gradient:SetAllPoints()
+        widget._gradient:SetTexture("Interface\\Buttons\\WHITE8x8")
+    end
+    TM:SetGradient(widget._gradient, "VERTICAL",
+        t.accent[1] * 0.06, t.accent[2] * 0.06, t.accent[3] * 0.06, 0.3,
+        0, 0, 0, 0.5)
+
+    -- Title bar with gradient
     titleBar:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
     })
-    titleBar:SetBackdropColor(t.accent[1] * 0.15, t.accent[2] * 0.15, t.accent[3] * 0.15, 0.9)
+    titleBar:SetBackdropColor(t.accent[1] * 0.2, t.accent[2] * 0.2, t.accent[3] * 0.2, 0.95)
+
+    -- Title bar gradient overlay
+    if not titleBar._gradient then
+        titleBar._gradient = titleBar:CreateTexture(nil, "ARTWORK", nil, 1)
+        titleBar._gradient:SetAllPoints()
+        titleBar._gradient:SetTexture("Interface\\Buttons\\WHITE8x8")
+    end
+    TM:SetGradient(titleBar._gradient, "HORIZONTAL",
+        t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9,
+        t.accent[1] * 0.08, t.accent[2] * 0.08, t.accent[3] * 0.08, 0.5)
+
+    -- Accent underline
+    if not titleBar._accentLine then
+        titleBar._accentLine = titleBar:CreateTexture(nil, "ARTWORK", nil, 2)
+        titleBar._accentLine:SetHeight(1)
+        titleBar._accentLine:SetPoint("BOTTOMLEFT", titleBar, "BOTTOMLEFT", 0, 0)
+        titleBar._accentLine:SetPoint("BOTTOMRIGHT", titleBar, "BOTTOMRIGHT", 0, 0)
+        titleBar._accentLine:SetTexture("Interface\\Buttons\\WHITE8x8")
+    end
+    TM:SetGradient(titleBar._accentLine, "HORIZONTAL",
+        t.accent[1], t.accent[2], t.accent[3], 0.6,
+        t.accent[1], t.accent[2], t.accent[3], 0.1)
 
     widget._titleText:SetText(TM:AccentHex() .. "NEARBY|r")
 end

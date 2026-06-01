@@ -9,7 +9,6 @@ local DEFAULTS = {
     deathLog = {},      -- ordered list of deaths (newest first)
     enemySheet = {},    -- ["Name-Realm"] = { enemy player aggregated data }
     scoreboard = {},    -- ["Name-Realm"] = { guild member score data }
-    arenaLog = {},      -- ordered list of arena matches (newest first)
     settings = {
         debug = false,
         announceKills = true,
@@ -57,15 +56,85 @@ local DEFAULTS = {
 }
 
 function Deadpool:InitDB()
-    -- Account-wide saved data (primary store — shared across all characters)
-    if not DeadpoolDB then
-        DeadpoolDB = {}
+    -- Per-character saved data (primary store — each character has own guild data)
+    if not DeadpoolCharDB then
+        DeadpoolCharDB = {}
     end
-    self:MergeDefaults(DeadpoolDB, DEFAULTS)
-    self.db = DeadpoolDB
+    -- Account-wide DB kept for achievements only
+    if not DeadpoolDB then DeadpoolDB = {} end
 
-    -- One-time migration: merge any per-character data into account-wide DB
-    self:MigrateFromCharDB()
+    -- One-time migration: copy account-wide data DOWN to per-character
+    if not DeadpoolCharDB._migratedFromAccountV2 then
+        self:MigrateAccountToChar()
+        DeadpoolCharDB._migratedFromAccountV2 = true
+        -- CRITICAL: clear guild identity so CheckGuildIdentity treats this as
+        -- a fresh install — it will SET the guild name without WIPING data.
+        -- The account-wide _guildName may be from a different character's guild.
+        DeadpoolCharDB._guildName = nil
+    end
+
+    self:MergeDefaults(DeadpoolCharDB, DEFAULTS)
+    self.db = DeadpoolCharDB
+
+    -- Ensure arena log exists
+    if not self.db.arenaLog then self.db.arenaLog = {} end
+end
+
+----------------------------------------------------------------------
+-- Migration: copy account-wide DeadpoolDB data into per-character
+-- DeadpoolCharDB so each character keeps their own guild data.
+-- Only runs once per character (flagged by _migratedFromAccountV2).
+----------------------------------------------------------------------
+function Deadpool:MigrateAccountToChar()
+    if not DeadpoolDB or not next(DeadpoolDB) then return end
+
+    -- Tables to copy from account → character
+    local copyKeys = {
+        "kosList", "killLog", "deathLog", "enemySheet",
+        "scoreboard", "guildConfig", "settings",
+    }
+
+    local migrated = 0
+    for _, key in ipairs(copyKeys) do
+        local src = DeadpoolDB[key]
+        if src and type(src) == "table" and next(src) then
+            if not DeadpoolCharDB[key] or not next(DeadpoolCharDB[key]) then
+                -- Character has no data for this key — copy from account
+                DeadpoolCharDB[key] = {}
+                for k, v in pairs(src) do
+                    DeadpoolCharDB[key][k] = v
+                end
+                migrated = migrated + 1
+            end
+        end
+    end
+
+    -- Copy ordered lists (killLog, deathLog) properly
+    for _, key in ipairs({"killLog", "deathLog"}) do
+        local src = DeadpoolDB[key]
+        if src and type(src) == "table" and #src > 0 then
+            if not DeadpoolCharDB[key] or #DeadpoolCharDB[key] == 0 then
+                DeadpoolCharDB[key] = {}
+                for i, v in ipairs(src) do
+                    DeadpoolCharDB[key][i] = v
+                end
+            end
+        end
+    end
+
+    -- Copy guild identity
+    if DeadpoolDB._guildName and (not DeadpoolCharDB._guildName or DeadpoolCharDB._guildName == "") then
+        DeadpoolCharDB._guildName = DeadpoolDB._guildName
+    end
+
+    -- Copy sync version
+    if (DeadpoolDB.syncVersion or 0) > (DeadpoolCharDB.syncVersion or 0) then
+        DeadpoolCharDB.syncVersion = DeadpoolDB.syncVersion
+    end
+
+    -- Copy one-time flags
+    if DeadpoolDB._enemySheetCleaned then DeadpoolCharDB._enemySheetCleaned = true end
+    if DeadpoolDB._demoPurged then DeadpoolCharDB._demoPurged = true end
 end
 
 function Deadpool:MergeDefaults(target, defaults)
@@ -101,17 +170,15 @@ function Deadpool:CheckGuildIdentity()
     -- NEVER make wipe decisions without confirmed guild data.
     if not guildName or guildName == "" then
         if not IsInGuild() then
-            -- Confirmed not in a guild (not just loading).
-            -- But only wipe if we had a guild AND we can confirm we truly
-            -- have no guild (double-check with GetNumGuildMembers).
             local numMembers = GetNumGuildMembers()
-            if numMembers == 0 and self.db._guildName and self.db._guildName ~= "" then
+            -- Only wipe if we've been stable for a while (not a fresh migration)
+            -- and we definitely have no guild
+            if numMembers == 0 and self.db._guildName and self.db._guildName ~= ""
+                and not self.db._migratedFromAccountV2_justNow then
                 self:WipeGuildData("left guild")
                 self.db._guildName = ""
             end
         end
-        -- If IsInGuild() is true but GetGuildInfo returned nil, guild info
-        -- is still loading. Do NOT wipe. Schedule a retry.
         if IsInGuild() then
             C_Timer.After(3, function()
                 Deadpool:CheckGuildIdentity()
@@ -123,7 +190,7 @@ function Deadpool:CheckGuildIdentity()
     local realm = GetRealmName() or "Unknown"
     local currentKey = guildName .. "-" .. realm
 
-    -- First time setting guild (fresh install or migration) — just record it
+    -- First time setting guild (fresh install or migration) — just record it, NO WIPE
     if not self.db._guildName or self.db._guildName == "" then
         self.db._guildName = currentKey
         return true

@@ -46,24 +46,35 @@ function Alerts:CreateAlertFrame()
         alertFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 180)
     end
 
-    -- Themed backdrop
+    -- Themed backdrop with gradient
     if t then
         alertFrame:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
             edgeFile = "Interface\\Buttons\\WHITE8x8",
             edgeSize = 1,
         })
-        alertFrame:SetBackdropColor(t.bg[1] * 0.8, t.bg[2] * 0.8, t.bg[3] * 0.8, 0.85)
+        alertFrame:SetBackdropColor(t.bg[1] * 0.8, t.bg[2] * 0.8, t.bg[3] * 0.8, 0.9)
         alertFrame:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.8)
+
+        -- Gradient overlay for depth
+        local grad = alertFrame:CreateTexture(nil, "BACKGROUND", nil, 1)
+        grad:SetAllPoints()
+        grad:SetTexture("Interface\\Buttons\\WHITE8x8")
+        Deadpool.modules.Theme:SetGradient(grad, "VERTICAL",
+            t.accent[1] * 0.15, t.accent[2] * 0.15, t.accent[3] * 0.15, 0.5,
+            0, 0, 0, 0.3)
     end
 
-    -- Accent bar at top
+    -- Accent bar at top with gradient
     local accentBar = alertFrame:CreateTexture(nil, "ARTWORK")
-    accentBar:SetHeight(2)
+    accentBar:SetHeight(3)
     accentBar:SetPoint("TOPLEFT", alertFrame, "TOPLEFT", 1, -1)
     accentBar:SetPoint("TOPRIGHT", alertFrame, "TOPRIGHT", -1, -1)
     if t then
-        accentBar:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.9)
+        accentBar:SetTexture("Interface\\Buttons\\WHITE8x8")
+        Deadpool.modules.Theme:SetGradient(accentBar, "HORIZONTAL",
+            t.accent[1], t.accent[2], t.accent[3], 0.3,
+            t.accent[1], t.accent[2], t.accent[3], 1)
     else
         accentBar:SetColorTexture(0.8, 0.1, 0.1, 0.9)
     end
@@ -124,6 +135,11 @@ function Alerts:CreateAlertFrame()
         elapsed = 0
         alertFrame:SetAlpha(1)
         alertFrame:Show()
+        -- Slide-in + scale animation
+        local TM = Deadpool.modules.Theme
+        if TM and TM.FadeIn then
+            TM:FadeIn(alertFrame, 0.3)
+        end
     end
 end
 

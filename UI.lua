@@ -6,19 +6,18 @@
 local UI = {}
 Deadpool:RegisterModule("UI", UI)
 
--- Frame dimensions (fixed size, scale controlled by setting)
-local FRAME_WIDTH = 950
-local FRAME_HEIGHT = 620
+-- Frame dimensions
+local FRAME_WIDTH = 1100
+local FRAME_HEIGHT = 650
 local ROW_HEIGHT = 22
 local HEADER_HEIGHT = 26
-local TAB_HEIGHT = 28
+local SIDEBAR_WIDTH = 140
 
 -- Tab definitions
 local TABS = {
     { key = "dashboard",     label = "Dashboard" },
     { key = "kos",           label = "Kill on Sight" },
     { key = "arena",         label = "Arena" },
-    { key = "enemies",       label = "Enemies" },
     { key = "scoreboard",    label = "Leaderboard" },
     { key = "quests",        label = "Quests" },
     { key = "achievements",  label = "Achievements" },
@@ -66,6 +65,8 @@ function Deadpool:ToggleUI()
     if mainFrame:IsShown() then mainFrame:Hide()
     else
         mainFrame:Show()
+        -- Fade-in animation on open
+        Deadpool.modules.Theme:FadeIn(mainFrame, 0.2)
         UI:SelectTab(activeTab)
     end
 end
@@ -143,7 +144,9 @@ end
 -- Main frame (large, resizable)
 ----------------------------------------------------------------------
 function UI:CreateMainFrame()
-    -- Use a plain frame instead of BasicFrameTemplateWithInset so we can fully theme it
+    local TM = Deadpool.modules.Theme
+    local t = TM.active
+
     mainFrame = CreateFrame("Frame", "DeadpoolMainFrame", UIParent, "BackdropTemplate")
     mainFrame:SetSize(FRAME_WIDTH, FRAME_HEIGHT)
     mainFrame:SetPoint("CENTER")
@@ -155,141 +158,124 @@ function UI:CreateMainFrame()
     mainFrame:SetClampedToScreen(true)
     mainFrame:SetFrameStrata("HIGH")
     mainFrame:Hide()
-
-    -- Apply scale from settings
     mainFrame:SetScale(Deadpool.db.settings.uiScale or 1.0)
 
-    -- Apply themed backdrop
     self:ApplyFrameTheme()
-
-    -- Title bar
-    local titleBar = CreateFrame("Frame", nil, mainFrame)
-    titleBar:SetHeight(26)
-    titleBar:SetPoint("TOPLEFT", 2, -2)
-    titleBar:SetPoint("TOPRIGHT", -2, -2)
-    mainFrame.titleBar = titleBar
-
-    local titleBg = titleBar:CreateTexture(nil, "BACKGROUND")
-    titleBg:SetAllPoints()
-    local t = Deadpool.modules.Theme.active
-    titleBg:SetColorTexture(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.95)
-    mainFrame.titleBarBg = titleBg
-
-    local titleText = titleBar:CreateFontString(nil, "OVERLAY")
-    titleText:SetFont(Deadpool.modules.Theme:GetTitleFont())
-    titleText:SetPoint("LEFT", titleBar, "LEFT", 10, 0)
-    titleText:SetText(Deadpool.modules.Theme:AccentHex() .. "DEADPOOL|r")
-    mainFrame.titleText = titleText
-
-    -- Author credit
-    local authorBadge = titleBar:CreateFontString(nil, "OVERLAY")
-    authorBadge:SetFont(Deadpool.modules.Theme:GetBodyFont())
-    authorBadge:SetPoint("LEFT", titleText, "RIGHT", 10, 0)
-    authorBadge:SetText(Deadpool.colors.grey .. "by Evildz|r")
-
-    -- Version label
-    local verText = titleBar:CreateFontString(nil, "OVERLAY")
-    verText:SetFont(Deadpool.modules.Theme:GetBodyFont())
-    verText:SetPoint("RIGHT", titleBar, "RIGHT", -30, 0)
-    verText:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
-    verText:SetText("v" .. Deadpool.version)
-
-    -- Close button â€” visible X
-    local closeBtn = CreateFrame("Button", nil, titleBar)
-    closeBtn:SetSize(26, 26)
-    closeBtn:SetPoint("RIGHT", titleBar, "RIGHT", -2, 0)
-    local xText = closeBtn:CreateFontString(nil, "OVERLAY")
-    xText:SetFont("Fonts\\FRIZQT__.TTF", 16, "OUTLINE")
-    xText:SetPoint("CENTER", 0, 0)
-    xText:SetText("X")
-    xText:SetTextColor(0.8, 0.2, 0.2)
-    closeBtn:SetScript("OnEnter", function() xText:SetTextColor(1, 0.4, 0.4) end)
-    closeBtn:SetScript("OnLeave", function() xText:SetTextColor(0.8, 0.2, 0.2) end)
-    closeBtn:SetScript("OnClick", function() mainFrame:Hide() end)
-
-    -- Title
-    mainFrame.TitleText = mainFrame.titleText
-
+    TM:AddGradient(mainFrame, "VERTICAL",
+        t.accent[1]*0.04, t.accent[2]*0.04, t.accent[3]*0.04, 0.3, 0, 0, 0, 0.5)
     tinsert(UISpecialFrames, "DeadpoolMainFrame")
 
-    -- Tabs
+    -- SIDEBAR
+    local sidebar = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
+    sidebar:SetWidth(SIDEBAR_WIDTH)
+    sidebar:SetPoint("TOPLEFT", 2, -2)
+    sidebar:SetPoint("BOTTOMLEFT", 2, 2)
+    sidebar:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    sidebar:SetBackdropColor(t.bg[1]*0.6, t.bg[2]*0.6, t.bg[3]*0.6, 0.95)
+    sidebar:SetFrameLevel(mainFrame:GetFrameLevel() + 10)
+    mainFrame.sidebar = sidebar
+    TM:AddGradient(sidebar, "VERTICAL",
+        t.accent[1]*0.08, t.accent[2]*0.08, t.accent[3]*0.08, 0.5, 0, 0, 0, 0.3)
+
+    local sEdge = sidebar:CreateTexture(nil, "ARTWORK", nil, 2)
+    sEdge:SetWidth(1)
+    sEdge:SetPoint("TOPRIGHT", 0, 0)
+    sEdge:SetPoint("BOTTOMRIGHT", 0, 0)
+    sEdge:SetTexture("Interface\\Buttons\\WHITE8x8")
+    TM:SetGradient(sEdge, "VERTICAL",
+        t.accent[1], t.accent[2], t.accent[3], 0.5,
+        t.accent[1], t.accent[2], t.accent[3], 0.1)
+
+    local logo = sidebar:CreateFontString(nil, "OVERLAY")
+    logo:SetFont(TM:GetFont(18, "OUTLINE"))
+    logo:SetPoint("TOP", 0, -14)
+    logo:SetText(TM:AccentHex() .. "DEADPOOL|r")
+    mainFrame.titleText = logo
+
+    local verLbl = sidebar:CreateFontString(nil, "OVERLAY")
+    verLbl:SetFont(TM:GetFont(9, ""))
+    verLbl:SetPoint("TOP", logo, "BOTTOM", 0, -2)
+    verLbl:SetText(Deadpool.colors.grey .. "v" .. Deadpool.version .. " by Evildz|r")
+
+    local bLine = sidebar:CreateTexture(nil, "ARTWORK")
+    bLine:SetHeight(1)
+    bLine:SetPoint("TOPLEFT", 10, -48)
+    bLine:SetPoint("TOPRIGHT", -10, -48)
+    bLine:SetTexture("Interface\\Buttons\\WHITE8x8")
+    TM:SetGradient(bLine, "HORIZONTAL",
+        t.accent[1], t.accent[2], t.accent[3], 0.05,
+        t.accent[1], t.accent[2], t.accent[3], 0.5)
+
+    -- CLOSE
+    local closeBtn = CreateFrame("Button", nil, mainFrame)
+    closeBtn:SetSize(28, 28)
+    closeBtn:SetPoint("TOPRIGHT", -6, -6)
+    local xText = closeBtn:CreateFontString(nil, "OVERLAY")
+    xText:SetFont(TM:GetFont(16, "OUTLINE"))
+    xText:SetPoint("CENTER")
+    xText:SetText("X")
+    xText:SetTextColor(0.5, 0.2, 0.2)
+    closeBtn:SetScript("OnEnter", function() xText:SetTextColor(1, 0.4, 0.4) end)
+    closeBtn:SetScript("OnLeave", function() xText:SetTextColor(0.5, 0.2, 0.2) end)
+    closeBtn:SetScript("OnClick", function() mainFrame:Hide() end)
+
     self:CreateTabs()
-
-    -- Filter bar
     self:CreateFilterBar()
-
-    -- Content area
     self:CreateContentArea()
 
-    -- Bottom status bar (proper anchored panel)
+    -- BOTTOM BAR
     local bottomBar = CreateFrame("Frame", nil, mainFrame, "BackdropTemplate")
-    bottomBar:SetHeight(26)
-    bottomBar:SetPoint("BOTTOMLEFT", mainFrame, "BOTTOMLEFT", 2, 2)
-    bottomBar:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -2, 2)
-    bottomBar:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-    })
-    local t = Deadpool.modules.Theme.active
-    bottomBar:SetBackdropColor(t.headerBg[1], t.headerBg[2], t.headerBg[3], 0.95)
+    bottomBar:SetHeight(24)
+    bottomBar:SetPoint("BOTTOMLEFT", sidebar, "BOTTOMRIGHT", 2, 0)
+    bottomBar:SetPoint("BOTTOMRIGHT", -2, 2)
+    bottomBar:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    bottomBar:SetBackdropColor(t.headerBg[1], t.headerBg[2], t.headerBg[3], 0.8)
     mainFrame.bottomBar = bottomBar
 
-    -- Status text (left side)
     statusText = bottomBar:CreateFontString(nil, "OVERLAY")
-    statusText:SetFont(Deadpool.modules.Theme:GetFont(11, ""))
-    statusText:SetPoint("LEFT", bottomBar, "LEFT", 10, 0)
+    statusText:SetFont(TM:GetFont(10, ""))
+    statusText:SetPoint("LEFT", 10, 0)
     statusText:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
 
-    -- Custom themed buttons (right side of bottom bar)
-    local function CreateThemedButton(parent, width, text, onClick)
-        local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-        btn:SetSize(width, 20)
-        btn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-        })
-        btn:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
-        btn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
-        btn._label = btn:CreateFontString(nil, "OVERLAY")
-        btn._label:SetFont(Deadpool.modules.Theme:GetFont(11, ""))
-        btn._label:SetPoint("CENTER")
-        btn._label:SetText(text)
-        btn._label:SetTextColor(t.text[1], t.text[2], t.text[3])
-        btn:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(t.accent[1] * 0.5, t.accent[2] * 0.5, t.accent[3] * 0.5, 1)
-            self:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 1)
-        end)
-        btn:SetScript("OnLeave", function(self)
-            self:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
-            self:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
-        end)
-        btn:SetScript("OnClick", onClick)
-        return btn
-    end
-
-    local addBtn = CreateThemedButton(bottomBar, 90, "Add Target", function()
+    local addBtn = CreateFrame("Button", nil, bottomBar, "BackdropTemplate")
+    addBtn:SetSize(90, 20)
+    addBtn:SetPoint("RIGHT", -8, 0)
+    addBtn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    addBtn:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+    addBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.5)
+    addBtn._label = addBtn:CreateFontString(nil, "OVERLAY")
+    addBtn._label:SetFont(TM:GetFont(10, ""))
+    addBtn._label:SetPoint("CENTER")
+    addBtn._label:SetText("Add Target")
+    addBtn._label:SetTextColor(t.text[1], t.text[2], t.text[3])
+    addBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(t.accent[1]*0.5, t.accent[2]*0.5, t.accent[3]*0.5, 1) end)
+    addBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9) end)
+    addBtn:SetScript("OnClick", function()
         if UnitExists("target") and UnitIsPlayer("target") and UnitIsEnemy("player", "target") then
-            local fullName = Deadpool:GetUnitFullName("target")
-            if fullName then Deadpool:AddToKOS(fullName, "") end
-        else
-            StaticPopup_Show("DEADPOOL_ADD_KOS")
-        end
+            local fn = Deadpool:GetUnitFullName("target")
+            if fn then Deadpool:AddToKOS(fn, "") end
+        else StaticPopup_Show("DEADPOOL_ADD_KOS") end
     end)
-    addBtn:SetPoint("RIGHT", bottomBar, "RIGHT", -8, 0)
     mainFrame.addBtn = addBtn
 
-    local syncBtn = CreateThemedButton(bottomBar, 55, "Sync", function()
-        Deadpool:RequestSync()
-    end)
+    local syncBtn = CreateFrame("Button", nil, bottomBar, "BackdropTemplate")
+    syncBtn:SetSize(55, 20)
     syncBtn:SetPoint("RIGHT", addBtn, "LEFT", -6, 0)
+    syncBtn:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 1 })
+    syncBtn:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+    syncBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.5)
+    syncBtn._label = syncBtn:CreateFontString(nil, "OVERLAY")
+    syncBtn._label:SetFont(TM:GetFont(10, ""))
+    syncBtn._label:SetPoint("CENTER")
+    syncBtn._label:SetText("Sync")
+    syncBtn._label:SetTextColor(t.text[1], t.text[2], t.text[3])
+    syncBtn:SetScript("OnEnter", function(self) self:SetBackdropColor(t.accent[1]*0.5, t.accent[2]*0.5, t.accent[3]*0.5, 1) end)
+    syncBtn:SetScript("OnLeave", function(self) self:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9) end)
+    syncBtn:SetScript("OnClick", function() Deadpool:RequestSync() end)
     mainFrame.syncBtn = syncBtn
 
-    local changelogBtn = CreateThemedButton(bottomBar, 80, "Changelog", function()
-        UI:ShowChangelog()
-    end)
-    changelogBtn:SetPoint("RIGHT", syncBtn, "LEFT", -6, 0)
-    mainFrame.changelogBtn = changelogBtn
-
+    -- Popup dialogs
+    -- Popup dialogs
     -- Popup dialogs
     StaticPopupDialogs["DEADPOOL_ADD_KOS"] = {
         text = "Enter player name to add to Kill on Sight:",
@@ -365,44 +351,51 @@ end
 -- Tab buttons
 ----------------------------------------------------------------------
 function UI:CreateTabs()
+    local TM = Deadpool.modules.Theme
+    local t = TM.active
     tabButtons = {}
+    local TAB_H = 28
+    local startY = -54  -- below branding + accent line
+
     for i, tabDef in ipairs(TABS) do
-        local btn = CreateFrame("Button", "DeadpoolTab" .. i, mainFrame)
-        btn:SetSize(1, TAB_HEIGHT)
-        btn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 0, -26)
+        local btn = CreateFrame("Button", "DeadpoolTab" .. i, mainFrame.sidebar)
+        btn:SetSize(SIDEBAR_WIDTH - 4, TAB_H)
+        btn:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPLEFT", 2, startY - (i - 1) * (TAB_H + 1))
 
         btn.bg = btn:CreateTexture(nil, "BACKGROUND")
         btn.bg:SetAllPoints()
-        btn.bg:SetColorTexture(0.15, 0.15, 0.15, 0.9)
+        btn.bg:SetColorTexture(0, 0, 0, 0)
 
-        btn.text = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-        btn.text:SetPoint("CENTER")
-        btn.text:SetText(tabDef.label)
+        -- Left accent indicator (active tab)
+        btn.indicator = btn:CreateTexture(nil, "OVERLAY")
+        btn.indicator:SetWidth(3)
+        btn.indicator:SetPoint("TOPLEFT", 0, -2)
+        btn.indicator:SetPoint("BOTTOMLEFT", 0, 2)
+        btn.indicator:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 1)
+        btn.indicator:Hide()
 
+        -- Hover highlight (gradient)
         btn.highlight = btn:CreateTexture(nil, "HIGHLIGHT")
         btn.highlight:SetAllPoints()
-        btn.highlight:SetColorTexture(0.3, 0.1, 0.1, 0.4)
+        btn.highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
+        TM:SetGradient(btn.highlight, "HORIZONTAL",
+            t.accent[1]*0.15, t.accent[2]*0.15, t.accent[3]*0.15, 0.4,
+            0, 0, 0, 0)
+
+        btn.text = btn:CreateFontString(nil, "OVERLAY")
+        btn.text:SetFont(TM:GetFont(11, ""))
+        btn.text:SetPoint("LEFT", 14, 0)
+        btn.text:SetText(tabDef.label)
+        btn.text:SetJustifyH("LEFT")
 
         btn:SetScript("OnClick", function() UI:SelectTab(tabDef.key) end)
-
         tabButtons[tabDef.key] = btn
         tabButtons[tabDef.key]._index = i
     end
-    self:LayoutTabs()
 end
 
 function UI:LayoutTabs()
-    local totalWidth = FRAME_WIDTH - 2  -- 1px padding each side
-    local gap = 1
-    local totalGaps = (#TABS - 1) * gap
-    local tabWidth = math.floor((totalWidth - totalGaps) / #TABS)
-    for _, tabDef in ipairs(TABS) do
-        local btn = tabButtons[tabDef.key]
-        local i = btn._index
-        btn:ClearAllPoints()
-        btn:SetSize(tabWidth, TAB_HEIGHT)
-        btn:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 1 + (i - 1) * (tabWidth + gap), -26)
-    end
+    -- Sidebar tabs don't need dynamic layout — positioned absolutely in CreateTabs
 end
 
 function UI:SelectTab(key)
@@ -411,11 +404,13 @@ function UI:SelectTab(key)
     for k, btn in pairs(tabButtons) do
         if type(btn) == "table" and btn.bg then
             if k == key then
-                btn.bg:SetColorTexture(t.tabActive[1], t.tabActive[2], t.tabActive[3], t.tabActive[4])
+                btn.bg:SetColorTexture(t.tabActive[1], t.tabActive[2], t.tabActive[3], t.tabActive[4] or 0.8)
                 btn.text:SetTextColor(t.tabTextActive[1], t.tabTextActive[2], t.tabTextActive[3])
+                if btn.indicator then btn.indicator:Show() end
             else
-                btn.bg:SetColorTexture(t.tabInactive[1], t.tabInactive[2], t.tabInactive[3], t.tabInactive[4])
+                btn.bg:SetColorTexture(0, 0, 0, 0)
                 btn.text:SetTextColor(t.tabTextInactive[1], t.tabTextInactive[2], t.tabTextInactive[3])
+                if btn.indicator then btn.indicator:Hide() end
             end
         end
     end
@@ -454,8 +449,9 @@ local filterBox
 local filterBar  -- stored so we can show/hide per tab
 function UI:CreateFilterBar()
     filterBar = CreateFrame("Frame", nil, mainFrame)
-    filterBar:SetSize(FRAME_WIDTH - 20, 24)
-    filterBar:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
+    filterBar:SetHeight(24)
+    filterBar:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPRIGHT", 4, -6)
+    filterBar:SetPoint("TOPRIGHT", mainFrame, "TOPRIGHT", -12, -6)
 
     filterBox = CreateFrame("EditBox", "DeadpoolFilterBox", filterBar, "InputBoxTemplate")
     filterBox:SetSize(240, 20)
@@ -516,14 +512,57 @@ local scrollMaxOffset = 0
 
 function UI:CreateContentArea()
     contentArea = CreateFrame("Frame", nil, mainFrame)
-    contentArea:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -80)
-    contentArea:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 32)
+    contentArea:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPRIGHT", 2, -32)
+    contentArea:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 28)
+    contentArea:SetClipsChildren(true)
 
-    -- Column headers
+    -- Tab banner (title + contextual stats)
+    local TM = Deadpool.modules.Theme
+    local t = TM.active
+    local banner = CreateFrame("Frame", nil, contentArea, "BackdropTemplate")
+    banner:SetHeight(38)
+    banner:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 0, 0)
+    banner:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", 0, 0)
+    banner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    banner:SetBackdropColor(t.accent[1]*0.08, t.accent[2]*0.08, t.accent[3]*0.08, 0.8)
+    contentArea.banner = banner
+
+    -- Accent line at bottom of banner
+    local bannerLine = banner:CreateTexture(nil, "ARTWORK", nil, 1)
+    bannerLine:SetHeight(1)
+    bannerLine:SetPoint("BOTTOMLEFT", banner, "BOTTOMLEFT", 0, 0)
+    bannerLine:SetPoint("BOTTOMRIGHT", banner, "BOTTOMRIGHT", 0, 0)
+    bannerLine:SetTexture("Interface\\Buttons\\WHITE8x8")
+    TM:SetGradient(bannerLine, "HORIZONTAL",
+        t.accent[1], t.accent[2], t.accent[3], 0.6,
+        t.accent[1], t.accent[2], t.accent[3], 0.05)
+
+    banner.title = banner:CreateFontString(nil, "OVERLAY")
+    banner.title:SetFont(TM:GetFont(14, "OUTLINE"))
+    banner.title:SetPoint("LEFT", 10, 4)
+    banner.title:SetText("")
+
+    banner.stat1 = banner:CreateFontString(nil, "OVERLAY")
+    banner.stat1:SetFont(TM:GetFont(10, ""))
+    banner.stat1:SetPoint("LEFT", 10, -10)
+    banner.stat1:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+
+    banner.stat2 = banner:CreateFontString(nil, "OVERLAY")
+    banner.stat2:SetFont(TM:GetFont(10, ""))
+    banner.stat2:SetPoint("RIGHT", -50, 4)
+    banner.stat2:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+
+    banner.stat3 = banner:CreateFontString(nil, "OVERLAY")
+    banner.stat3:SetFont(TM:GetFont(10, ""))
+    banner.stat3:SetPoint("RIGHT", -50, -10)
+    banner.stat3:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+
+    -- Column headers (below banner)
     contentArea.headerFrame = CreateFrame("Frame", nil, contentArea)
     contentArea.headerFrame:SetHeight(HEADER_HEIGHT)
-    contentArea.headerFrame:SetPoint("TOPLEFT", contentArea, "TOPLEFT", 0, 0)
-    contentArea.headerFrame:SetPoint("TOPRIGHT", contentArea, "TOPRIGHT", -16, 0)
+    contentArea.headerFrame:SetPoint("TOPLEFT", contentArea.banner, "BOTTOMLEFT", 0, -1)
+    contentArea.headerFrame:SetPoint("TOPRIGHT", contentArea.banner, "BOTTOMRIGHT", -16, -1)
+    contentArea.headerFrame:SetClipsChildren(true)
     local hdrBg = contentArea.headerFrame:CreateTexture(nil, "BACKGROUND")
     hdrBg:SetAllPoints()
     hdrBg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
@@ -591,8 +630,9 @@ end
 ----------------------------------------------------------------------
 function UI:CreateRow(parent, index)
     local row = CreateFrame("Button", nil, parent)
-    row:SetSize(FRAME_WIDTH - 50, ROW_HEIGHT)
+    row:SetHeight(ROW_HEIGHT)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -(index - 1) * ROW_HEIGHT)
+    row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -(index - 1) * ROW_HEIGHT)
 
     row.bg = row:CreateTexture(nil, "BACKGROUND")
     row.bg:SetAllPoints()
@@ -696,10 +736,10 @@ function UI:RefreshContent()
     if UI.achievementsPanel then UI.achievementsPanel:Hide() end
 
     -- Filter bar: show only on filterable tabs, reposition content accordingly
-    local showFilter = (activeTab == "kos" or activeTab == "arena" or activeTab == "enemies"
+    local showFilter = (activeTab == "kos" or activeTab == "arena"
         or activeTab == "killlog")
-    -- Show Mine button: only on tabs where it makes sense
-    local showMine = (activeTab == "arena" or activeTab == "killlog")
+    -- Show Mine button: only on kill log (arena is already per-character)
+    local showMine = (activeTab == "killlog")
     if filterBar then
         if showFilter then
             filterBar:Show()
@@ -718,16 +758,111 @@ function UI:RefreshContent()
     if contentArea then
         contentArea:ClearAllPoints()
         if showFilter then
-            contentArea:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -80)
+            contentArea:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPRIGHT", 2, -32)
         else
-            contentArea:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
+            contentArea:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPRIGHT", 2, -6)
         end
-        contentArea:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 32)
+        contentArea:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 28)
     end
 
     contentArea:Show()
 
+    -- Update tab banner
+    self:UpdateBanner()
+
     self:RenderCurrentTab()
+end
+
+----------------------------------------------------------------------
+-- Tab Banner: title + contextual highlights per tab
+----------------------------------------------------------------------
+function UI:UpdateBanner()
+    if not contentArea or not contentArea.banner then return end
+    local b = contentArea.banner
+    local TM = Deadpool.modules.Theme
+    local accentHex = TM:AccentHex()
+
+    -- Hide banner on special tabs (dashboard, settings, quests, achievements)
+    if activeTab == "dashboard" or activeTab == "settings" or activeTab == "quests" or activeTab == "achievements" then
+        b:Hide()
+        return
+    end
+    b:Show()
+
+    b.title:SetText("")
+    b.stat1:SetText("")
+    b.stat2:SetText("")
+    b.stat3:SetText("")
+
+    if activeTab == "kos" then
+        local count = Deadpool:GetKOSCount()
+        local topTarget, topKills = nil, 0
+        for fn, e in pairs(Deadpool.db.kosList) do
+            if (e.totalKills or 0) > topKills then topTarget = e.name or fn; topKills = e.totalKills end
+        end
+        b.title:SetText(accentHex .. "KILL ON SIGHT|r")
+        b.stat1:SetText(count .. " targets on the list")
+        if topTarget and topKills > 0 then
+            b.stat2:SetText("Most hunted: " .. accentHex .. topTarget .. "|r")
+            b.stat3:SetText(topKills .. " kills")
+        end
+
+    elseif activeTab == "arena" then
+        local w, l, best = 0, 0, 0
+        for _, e in ipairs(Deadpool.db.arenaLog or {}) do
+            if e.won then w = w + 1 else l = l + 1 end
+            if (e.newRating or 0) > best then best = e.newRating end
+        end
+        local wr = (w + l) > 0 and math.floor(w / (w + l) * 100) or 0
+        b.title:SetText(accentHex .. "ARENA TRACKER|r")
+        b.stat1:SetText(Deadpool.colors.green .. w .. "W|r / " .. Deadpool.colors.red .. l .. "L|r  (" .. wr .. "% win rate)")
+        if best > 0 then
+            b.stat2:SetText("Peak rating")
+            b.stat3:SetText(accentHex .. best .. "|r")
+        end
+
+    elseif activeTab == "enemies" then
+        local kills, deaths = 0, 0
+        for _, e in pairs(Deadpool.demoData:GetMergedEnemySheet()) do
+            kills = kills + (e.timesWeKilledThem or 0)
+            deaths = deaths + (e.timesKilledUs or 0)
+        end
+        local kd = deaths > 0 and string.format("%.1f", kills / deaths) or "INF"
+        b.title:SetText(accentHex .. "KILL FEED|r")
+        b.stat1:SetText("Kills: " .. Deadpool.colors.green .. kills .. "|r  Deaths: " .. Deadpool.colors.red .. deaths .. "|r")
+        b.stat2:SetText("K/D Ratio")
+        b.stat3:SetText(accentHex .. kd .. "|r")
+
+    elseif activeTab == "scoreboard" then
+        local total = Deadpool:TableCount(Deadpool.demoData:GetMergedScoreboard())
+        local myName = Deadpool:GetPlayerFullName()
+        local rank = Deadpool:GetPlayerRank(myName)
+        local score = Deadpool:GetOrCreateScore(myName)
+        b.title:SetText(accentHex .. "LEADERBOARD|r")
+        b.stat1:SetText(total .. " guild members ranked")
+        b.stat2:SetText("Your rank: " .. accentHex .. "#" .. rank .. "|r")
+        b.stat3:SetText(Deadpool.colors.yellow .. (score.totalPoints or 0) .. " pts|r")
+
+    elseif activeTab == "mystats" then
+        local myName = Deadpool:GetPlayerFullName()
+        local score = Deadpool:GetOrCreateScore(myName)
+        b.title:SetText(accentHex .. "MY STATS|r")
+        b.stat1:SetText(Deadpool.colors.green .. (score.totalKills or 0) .. "|r kills  |  " .. Deadpool.colors.yellow .. (score.totalPoints or 0) .. "|r points")
+        if (score.bestStreak or 0) > 0 then
+            b.stat2:SetText("Best streak")
+            b.stat3:SetText(Deadpool.colors.orange .. score.bestStreak .. "|r")
+        end
+
+    elseif activeTab == "killlog" then
+        local total = #(Deadpool.db.killLog or {})
+        local recent = Deadpool.db.killLog[1]
+        b.title:SetText(accentHex .. "KILL LOG|r")
+        b.stat1:SetText(total .. " kills recorded")
+        if recent then
+            b.stat2:SetText("Latest: " .. Deadpool:ShortName(recent.killer or "?") .. " > " .. Deadpool:ShortName(recent.victim or "?"))
+            b.stat3:SetText(Deadpool.colors.grey .. Deadpool:TimeAgo(recent.time) .. "|r")
+        end
+    end
 end
 
 -- Render without resetting scroll (called by scrollbar and mouse wheel)
@@ -745,7 +880,6 @@ function UI:RenderCurrentTab()
 
     if activeTab == "kos" then self:RenderKOSList()
     elseif activeTab == "arena" then self:RenderArena()
-    elseif activeTab == "enemies" then self:RenderEnemies()
     elseif activeTab == "scoreboard" then self:RenderScoreboard()
     elseif activeTab == "mystats" then self:RenderMyStats()
     elseif activeTab == "killlog" then self:RenderKillLog()
@@ -876,6 +1010,12 @@ function UI:RenderKOSList()
                 if e.race then GameTooltip:AddLine("Race: " .. e.race, 0.7, 0.7, 0.7) end
                 if e.level and e.level > 0 then GameTooltip:AddLine("Level: " .. e.level, 0.7, 0.7, 0.7) end
                 if e.guild then GameTooltip:AddLine("Guild: <" .. e.guild .. ">", 0.4, 0.6, 0.8) end
+                if theirKills > 0 and (e.totalKills or 0) > 0 then
+                    GameTooltip:AddLine(" ")
+                    GameTooltip:AddLine("NEMESIS — mutual rivalry", 1, 0.3, 0.3)
+                    GameTooltip:AddLine("You killed them: " .. (e.totalKills or 0) .. "x", 0.5, 0.9, 0.5)
+                    GameTooltip:AddLine("They killed you: " .. theirKills .. "x", 0.9, 0.3, 0.3)
+                end
                 if e.lastKilledBy then GameTooltip:AddLine("Last killed by: " .. Deadpool:ShortName(e.lastKilledBy), 0.5, 0.9, 0.5) end
                 GameTooltip:AddLine("Added: " .. Deadpool:FormatDate(e.addedDate), 0.5, 0.5, 0.5)
                 GameTooltip:AddLine(" "); GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
@@ -920,9 +1060,9 @@ function UI:RenderArena()
             local e = data[idx]; row.data = e; row:Show()
             -- Row tint: green for wins, red for losses
             if e.won then
-                row._bg:SetColorTexture(0.05, 0.2, 0.05, 0.3)
+                row.bg:SetColorTexture(0.05, 0.2, 0.05, 0.3)
             else
-                row._bg:SetColorTexture(0.2, 0.05, 0.05, 0.3)
+                row.bg:SetColorTexture(0.2, 0.05, 0.05, 0.3)
             end
             SetCol(row, 1, 4, 100, Deadpool.colors.grey .. Deadpool:TimeAgo(e.time) .. "|r")
             SetCol(row, 2, 106, 45, Deadpool.colors.yellow .. (e.bracket or "?") .. "|r")
@@ -961,8 +1101,8 @@ function UI:RenderArena()
                     GameTooltip:AddLine("Duration: " .. m .. "m " .. s .. "s", 0.6, 0.6, 0.6)
                 end
                 GameTooltip:AddLine("Your K/D: " .. (e.myKills or 0) .. "/" .. (e.myDeaths or 0), 0.8, 0.8, 0.8)
-                if (e.myDamage or 0) > 0 then GameTooltip:AddLine("Damage: " .. e.myDamage, 1, 0.5, 0.3) end
-                if (e.myHealing or 0) > 0 then GameTooltip:AddLine("Healing: " .. e.myHealing, 0.3, 1, 0.5) end
+                if tonumber(e.myDamage or 0) and tonumber(e.myDamage) > 0 then GameTooltip:AddLine("Damage: " .. e.myDamage, 1, 0.5, 0.3) end
+                if tonumber(e.myHealing or 0) and tonumber(e.myHealing) > 0 then GameTooltip:AddLine("Healing: " .. e.myHealing, 0.3, 1, 0.5) end
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine("Click for full match details", 0.5, 0.5, 0.5)
                 GameTooltip:Show()
@@ -1125,6 +1265,7 @@ function UI:ShowArenaMatchPopup(match)
 end
 
 function UI:FormatNumber(n)
+    n = tonumber(n) or 0
     if n >= 1000000 then return string.format("%.1fM", n / 1000000)
     elseif n >= 1000 then return string.format("%.1fK", n / 1000)
     else return tostring(n) end
@@ -1581,7 +1722,7 @@ function UI:BuildQuestsPanel()
     local accentHex = TM:AccentHex()
 
     local panel = CreateFrame("Frame", nil, mainFrame)
-    panel:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
+    panel:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPRIGHT", 2, -6)
     panel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 28)
     panel:Hide()
     UI.questsPanel = panel
@@ -1835,7 +1976,7 @@ function UI:BuildAchievementsPanel()
     local accentHex = TM:AccentHex()
 
     local panel = CreateFrame("Frame", nil, mainFrame)
-    panel:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
+    panel:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPRIGHT", 12, -6)
     panel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 28)
     panel:Hide()
     UI.achievementsPanel = panel
@@ -2163,7 +2304,7 @@ function UI:BuildSettingsPanel()
 
     -- Outer container (clips content)
     UI.settingsPanel = CreateFrame("Frame", nil, mainFrame)
-    UI.settingsPanel:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 20, -82)
+    UI.settingsPanel:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPRIGHT", 2, -6)
     UI.settingsPanel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -20, 30)
     UI.settingsPanel:Hide()
 
@@ -3130,7 +3271,7 @@ function UI:ApplyFrameTheme()
     local t = Deadpool.modules.Theme.active
     if not t then return end
 
-    -- Main backdrop
+    -- Main backdrop with subtle glow border
     mainFrame:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Buttons\\WHITE8x8",
@@ -3139,6 +3280,16 @@ function UI:ApplyFrameTheme()
     })
     mainFrame:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], t.bg[4])
     mainFrame:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], t.border[4])
+
+    -- Outer glow border (accent-colored, subtle)
+    if not mainFrame._outerGlow then
+        local TM = Deadpool.modules.Theme
+        mainFrame._outerGlow = mainFrame:CreateTexture(nil, "BACKGROUND", nil, -2)
+        mainFrame._outerGlow:SetPoint("TOPLEFT", -2, 2)
+        mainFrame._outerGlow:SetPoint("BOTTOMRIGHT", 2, -2)
+        mainFrame._outerGlow:SetTexture("Interface\\Buttons\\WHITE8x8")
+    end
+    mainFrame._outerGlow:SetVertexColor(t.accent[1], t.accent[2], t.accent[3], 0.12)
 
     -- Title bar
     if mainFrame.titleBarBg then
@@ -3192,7 +3343,7 @@ end
 ----------------------------------------------------------------------
 function UI:CreateDashboardFrame()
     dashboardFrame = CreateFrame("Frame", nil, mainFrame)
-    dashboardFrame:SetPoint("TOPLEFT", mainFrame, "TOPLEFT", 10, -56)
+    dashboardFrame:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPRIGHT", 2, -6)
     dashboardFrame:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -10, 28)
     dashboardFrame:Hide()
     dashboardFrame.cards = {}
@@ -3220,12 +3371,24 @@ function UI:CreateStatCard(parent, x, y, w, h)
     card:SetBackdropColor(t.bgAlt[1], t.bgAlt[2], t.bgAlt[3], t.bgAlt[4])
     card:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.3)
 
-    -- Accent top bar
+    -- Gradient overlay for depth
+    TM:AddGradient(card, "VERTICAL",
+        t.accent[1] * 0.1, t.accent[2] * 0.1, t.accent[3] * 0.1, 0.3,
+        0, 0, 0, 0.1)
+
+    -- Hover effect
+    card:EnableMouse(true)
+    TM:AddHoverGlow(card)
+
+    -- Accent top bar with gradient fade
     local accentBar = card:CreateTexture(nil, "ARTWORK")
     accentBar:SetHeight(2)
     accentBar:SetPoint("TOPLEFT", 1, -1)
     accentBar:SetPoint("TOPRIGHT", -1, -1)
-    accentBar:SetColorTexture(t.accent[1], t.accent[2], t.accent[3], 0.8)
+    accentBar:SetTexture("Interface\\Buttons\\WHITE8x8")
+    Deadpool.modules.Theme:SetGradient(accentBar, "HORIZONTAL",
+        t.accent[1], t.accent[2], t.accent[3], 0.3,
+        t.accent[1], t.accent[2], t.accent[3], 1)
     card._accentBar = accentBar
 
     card.title = card:CreateFontString(nil, "OVERLAY")
@@ -3262,13 +3425,26 @@ function UI:CreateDashPanel(parent, x, y, w, h, title)
     panel:SetBackdropColor(t.bgAlt[1] * 0.7, t.bgAlt[2] * 0.7, t.bgAlt[3] * 0.7, 0.5)
     panel:SetBackdropBorderColor(t.border[1], t.border[2], t.border[3], 0.2)
 
-    -- Header strip
+    -- Header strip with gradient
     local header = panel:CreateTexture(nil, "ARTWORK")
     header:SetHeight(20)
     header:SetPoint("TOPLEFT", 1, -1)
     header:SetPoint("TOPRIGHT", -1, -1)
-    header:SetColorTexture(t.accent[1] * 0.15, t.accent[2] * 0.15, t.accent[3] * 0.15, 0.9)
+    header:SetTexture("Interface\\Buttons\\WHITE8x8")
+    Deadpool.modules.Theme:SetGradient(header, "HORIZONTAL",
+        t.accent[1] * 0.25, t.accent[2] * 0.25, t.accent[3] * 0.25, 0.95,
+        t.accent[1] * 0.05, t.accent[2] * 0.05, t.accent[3] * 0.05, 0.7)
     panel._header = header
+
+    -- Accent line under header
+    local hLine = panel:CreateTexture(nil, "ARTWORK", nil, 1)
+    hLine:SetHeight(1)
+    hLine:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, 0)
+    hLine:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, 0)
+    hLine:SetTexture("Interface\\Buttons\\WHITE8x8")
+    Deadpool.modules.Theme:SetGradient(hLine, "HORIZONTAL",
+        t.accent[1], t.accent[2], t.accent[3], 0.6,
+        t.accent[1], t.accent[2], t.accent[3], 0.05)
 
     local headerText = panel:CreateFontString(nil, "OVERLAY")
     headerText:SetFont(TM:GetFont(10, "OUTLINE"))

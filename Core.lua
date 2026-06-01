@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------
 
 Deadpool = {}
-Deadpool.version = "1.7.0"
+Deadpool.version = "2.0"
 Deadpool.prefix = "DEADPOOL"
 Deadpool.modules = {}
 
@@ -616,6 +616,35 @@ SlashCmdList["DEADPOOL"] = function(msg)
                 Deadpool:Print("First sorted: " .. (sorted[1].name or "?") .. " key=" .. (sorted[1]._key or "?"))
             end
         end
+    elseif cmd == "recover" then
+        -- Recover data from account-wide DeadpoolDB back into per-character DB
+        if not DeadpoolDB or not next(DeadpoolDB) then
+            self:Print(self.colors.red .. "No account-wide data found to recover.|r")
+            return
+        end
+        local keys = { "kosList", "killLog", "deathLog", "enemySheet", "scoreboard", "guildConfig" }
+        local recovered = 0
+        for _, key in ipairs(keys) do
+            local src = DeadpoolDB[key]
+            if src and type(src) == "table" and next(src) then
+                self.db[key] = {}
+                for k, v in pairs(src) do self.db[key][k] = v end
+                recovered = recovered + 1
+            end
+        end
+        for _, key in ipairs({"killLog", "deathLog"}) do
+            local src = DeadpoolDB[key]
+            if src and type(src) == "table" and #src > 0 then
+                self.db[key] = {}
+                for i, v in ipairs(src) do self.db[key][i] = v end
+            end
+        end
+        if (DeadpoolDB.syncVersion or 0) > (self.db.syncVersion or 0) then
+            self.db.syncVersion = DeadpoolDB.syncVersion
+        end
+        self.db._guildName = nil  -- let it re-detect cleanly
+        self:Print(self.colors.green .. "Recovered " .. recovered .. " data tables from account backup.|r")
+        self:Print("Type /reload to apply.")
     elseif cmd == "debug" then
         Deadpool.db.settings.debug = not Deadpool.db.settings.debug
         Deadpool:Print("Debug mode: " .. (Deadpool.db.settings.debug and "ON" or "OFF"))

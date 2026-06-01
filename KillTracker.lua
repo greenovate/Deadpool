@@ -69,10 +69,9 @@ function KillTracker:InitArenaTracker()
         end
     end)
 
-    -- Match end detection — delay to let scoreboard data populate
+    -- Match end detection — multiple events for reliability
     Deadpool:RegisterEvent("UPDATE_BATTLEFIELD_STATUS", function()
         if not arenaState.inArena or arenaState.recorded then return end
-        -- Check immediately and again after delays (data arrives async)
         KillTracker:CaptureArenaResult()
         C_Timer.After(1, function()
             if not arenaState.recorded then KillTracker:CaptureArenaResult() end
@@ -81,6 +80,26 @@ function KillTracker:InitArenaTracker()
             if not arenaState.recorded then KillTracker:CaptureArenaResult() end
         end)
     end)
+
+    -- Also check on CHAT_MSG_BG_SYSTEM_NEUTRAL (arena win/loss announcement)
+    Deadpool:RegisterEvent("CHAT_MSG_BG_SYSTEM_NEUTRAL", function()
+        if not arenaState.inArena or arenaState.recorded then return end
+        C_Timer.After(0.5, function()
+            if not arenaState.recorded then KillTracker:CaptureArenaResult() end
+        end)
+        C_Timer.After(2, function()
+            if not arenaState.recorded then KillTracker:CaptureArenaResult() end
+        end)
+    end)
+
+    -- Periodic check while in arena (fallback for missed events)
+    if C_Timer and C_Timer.NewTicker then
+        C_Timer.NewTicker(5, function()
+            if arenaState.inArena and not arenaState.recorded then
+                KillTracker:CaptureArenaResult()
+            end
+        end)
+    end
 end
 
 function KillTracker:CaptureArenaResult()
@@ -101,18 +120,38 @@ function KillTracker:CaptureArenaResult()
     local scores = {}
 
     for i = 1, numScores do
-        local name, killingBlows, honorKills, deaths, honorGained, faction,
-              race, class, classToken, damageDone, healingDone = GetBattlefieldScore(i)
+        -- TBC Anniversary: GetBattlefieldScore returns vary (may include rank field)
+        -- Safe approach: grab known positions + damage/healing from the end
+        local fields = { GetBattlefieldScore(i) }
+        local name = fields[1]
         if name then
             local shortName = name:match("^(.-)%-") or name
+            local numFields = #fields
+            -- Damage and healing are ALWAYS the last two numbers
+            local healingDone = tonumber(fields[numFields]) or 0
+            local damageDone = tonumber(fields[numFields - 1]) or 0
+            -- killingBlows is always field 2, deaths is field 4, faction is field 6
+            local killingBlows = tonumber(fields[2]) or 0
+            local deaths = tonumber(fields[4]) or 0
+            local faction = tonumber(fields[6]) or 0
+            -- classToken: scan backwards from damage for the uppercase class string
+            local classToken = nil
+            for fi = numFields - 2, 7, -1 do
+                local v = fields[fi]
+                if type(v) == "string" and v:match("^%u+$") and #v >= 4 then
+                    classToken = v
+                    break
+                end
+            end
+
             scores[#scores + 1] = {
                 name = shortName,
                 fullName = name,
                 class = classToken,
-                kills = killingBlows or 0,
-                deaths = deaths or 0,
-                damage = damageDone or 0,
-                healing = healingDone or 0,
+                kills = killingBlows,
+                deaths = deaths,
+                damage = damageDone,
+                healing = healingDone,
                 faction = faction,
             }
             if shortName == myName or name == myName then
@@ -261,13 +300,20 @@ end
 -- Combat Log: Killing Blow Detection
 ----------------------------------------------------------------------
 function KillTracker:OnCombatLogEvent()
-    -- Skip ALL tracking in battlegrounds, arenas, and sanctuary zones
-    if self:IsInBGOrArena() then return end
-    if Deadpool:IsInSanctuary() then return end
-
     local timestamp, subevent, hideCaster,
           sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
           destGUID, destName, destFlags, destRaidFlags = CombatLogGetCurrentEventInfo()
+
+    -- Kill sound: play EVERYWHERE (including BGs/arenas) on YOUR killing blow only
+    -- PARTY_KILL: fires when YOU get the killing blow in a group — always reliable
+    if subevent == "PARTY_KILL" and sourceName == UnitName("player")
+        and destGUID and destGUID:sub(1, 6) == "Player" then
+        Deadpool:PlayKillSound("kos", nil)
+    end
+
+    -- Skip detailed tracking in battlegrounds, arenas, and sanctuary zones
+    if self:IsInBGOrArena() then return end
+    if Deadpool:IsInSanctuary() then return end
 
     -- Scan EVERY combat log event for KOS targets in range
     -- If a hostile player appears as source or dest and they're on our list, alert

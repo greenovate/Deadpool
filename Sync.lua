@@ -403,6 +403,16 @@ function Sync:HandleSyncRequest(sender)
         Deadpool:Debug("Sync request from " .. sender .. " throttled")
         return
     end
+
+    -- Don't respond to sync requests if we have no data
+    -- Resets propagate via GM_CONFIG timestamps, not empty sync responses
+    local hasKOS = next(Deadpool.db.kosList) ~= nil
+    local hasScores = next(Deadpool.db.scoreboard) ~= nil
+    if not hasKOS and not hasScores then
+        Deadpool:Debug("Sync request from " .. sender .. " ignored — no data to share")
+        return
+    end
+
     self._lastSyncResponse = now
 
     Deadpool:Debug("Sync request from " .. sender .. " — sending bulk data")

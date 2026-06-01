@@ -240,6 +240,10 @@ function Theme:CycleTheme(direction)
     self:ApplyTheme()
     Deadpool:Print("Theme: " .. self.active.name)
     if Deadpool.RefreshUI then Deadpool:RefreshUI() end
+    -- Re-theme the nearby widget
+    if Deadpool.modules.Nearby and Deadpool.modules.Nearby.ApplyTheme then
+        Deadpool.modules.Nearby:ApplyTheme()
+    end
 end
 
 ----------------------------------------------------------------------
@@ -307,6 +311,142 @@ end
 
 function Theme:GetBodyFont()
     return self:GetFont(11, "")
+end
+
+----------------------------------------------------------------------
+-- Visual Effects Engine
+-- Gradients, animations, glow effects — makes the UI feel alive
+----------------------------------------------------------------------
+
+-- Compatibility wrapper: SetGradientAlpha was removed in modern WoW engine.
+-- TBC Anniversary uses SetGradient(orientation, minColor, maxColor).
+function Theme:SetGradient(tex, orientation, r1, g1, b1, a1, r2, g2, b2, a2)
+    if tex.SetGradientAlpha then
+        tex:SetGradientAlpha(orientation, r1, g1, b1, a1, r2, g2, b2, a2)
+    elseif tex.SetGradient then
+        local minColor = CreateColor(r1, g1, b1, a1)
+        local maxColor = CreateColor(r2, g2, b2, a2)
+        tex:SetGradient(orientation, minColor, maxColor)
+    end
+end
+
+-- Apply a gradient overlay texture to a frame
+function Theme:AddGradient(frame, orientation, r1, g1, b1, a1, r2, g2, b2, a2, layer, sublevel)
+    local tex = frame:CreateTexture(nil, layer or "BACKGROUND", nil, sublevel or 1)
+    tex:SetAllPoints()
+    tex:SetTexture("Interface\\Buttons\\WHITE8x8")
+    self:SetGradient(tex, orientation or "VERTICAL", r1, g1, b1, a1, r2, g2, b2, a2)
+    return tex
+end
+
+-- Apply a themed gradient bg using current accent color
+function Theme:AddThemedGradient(frame, intensity)
+    local t = self.active
+    if not t then return end
+    intensity = intensity or 0.08
+    return self:AddGradient(frame, "VERTICAL",
+        t.accent[1] * intensity, t.accent[2] * intensity, t.accent[3] * intensity, 0.6,
+        t.bg[1], t.bg[2], t.bg[3], 0.95)
+end
+
+-- Fade-in animation
+function Theme:FadeIn(frame, duration, delay)
+    if not frame.CreateAnimationGroup then return end
+    frame:SetAlpha(0)
+    local ag = frame:CreateAnimationGroup()
+    local fade = ag:CreateAnimation("Alpha")
+    fade:SetFromAlpha(0)
+    fade:SetToAlpha(1)
+    fade:SetDuration(duration or 0.25)
+    fade:SetStartDelay(delay or 0)
+    fade:SetSmoothing("OUT")
+    ag:SetScript("OnFinished", function() frame:SetAlpha(1) end)
+    ag:Play()
+    return ag
+end
+
+-- Slide-in animation (from offset)
+function Theme:SlideIn(frame, offsetX, offsetY, duration)
+    if not frame.CreateAnimationGroup then return end
+    local ag = frame:CreateAnimationGroup()
+    local slide = ag:CreateAnimation("Translation")
+    slide:SetOffset(-(offsetX or 0), -(offsetY or 0))
+    slide:SetDuration(0)
+    local slideIn = ag:CreateAnimation("Translation")
+    slideIn:SetOffset(offsetX or 0, offsetY or 0)
+    slideIn:SetDuration(duration or 0.3)
+    slideIn:SetSmoothing("OUT")
+    slideIn:SetOrder(2)
+    ag:Play()
+    return ag
+end
+
+-- Pulse glow animation (repeating)
+function Theme:AddPulseGlow(frame, r, g, b, size)
+    local t = self.active
+    r = r or t.accent[1]
+    g = g or t.accent[2]
+    b = b or t.accent[3]
+    size = size or 3
+
+    local glow = frame:CreateTexture(nil, "BACKGROUND", nil, -1)
+    glow:SetPoint("TOPLEFT", -size, size)
+    glow:SetPoint("BOTTOMRIGHT", size, -size)
+    glow:SetTexture("Interface\\Buttons\\WHITE8x8")
+    glow:SetVertexColor(r, g, b, 0.15)
+
+    if frame.CreateAnimationGroup then
+        local ag = frame:CreateAnimationGroup()
+        local fadeOut = ag:CreateAnimation("Alpha")
+        fadeOut:SetFromAlpha(0.15)
+        fadeOut:SetToAlpha(0.04)
+        fadeOut:SetDuration(1.5)
+        fadeOut:SetSmoothing("IN_OUT")
+        fadeOut:SetOrder(1)
+        local fadeIn = ag:CreateAnimation("Alpha")
+        fadeIn:SetFromAlpha(0.04)
+        fadeIn:SetToAlpha(0.15)
+        fadeIn:SetDuration(1.5)
+        fadeIn:SetSmoothing("IN_OUT")
+        fadeIn:SetOrder(2)
+        ag:SetLooping("REPEAT")
+        ag:Play()
+    end
+
+    return glow
+end
+
+-- Accent line separator
+function Theme:AddAccentLine(parent, y, width)
+    local t = self.active
+    if not t then return end
+    local line = parent:CreateTexture(nil, "ARTWORK")
+    line:SetHeight(1)
+    if width then
+        line:SetWidth(width)
+        line:SetPoint("TOP", parent, "TOP", 0, y or 0)
+    else
+        line:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, y or 0)
+        line:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, y or 0)
+    end
+    line:SetTexture("Interface\\Buttons\\WHITE8x8")
+    self:SetGradient(line, "HORIZONTAL",
+        t.accent[1], t.accent[2], t.accent[3], 0,
+        t.accent[1], t.accent[2], t.accent[3], 0.6)
+    return line
+end
+
+-- Hover glow effect for a frame
+function Theme:AddHoverGlow(frame)
+    local t = self.active
+    if not t then return end
+    local hoverTex = frame:CreateTexture(nil, "HIGHLIGHT")
+    hoverTex:SetAllPoints()
+    hoverTex:SetTexture("Interface\\Buttons\\WHITE8x8")
+    self:SetGradient(hoverTex, "VERTICAL",
+        t.accent[1], t.accent[2], t.accent[3], 0.08,
+        t.accent[1], t.accent[2], t.accent[3], 0.02)
+    return hoverTex
 end
 
 function Theme:GetTitleFont()
