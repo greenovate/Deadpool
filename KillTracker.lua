@@ -36,6 +36,197 @@ function KillTracker:Init()
     Deadpool:RegisterEvent("NAME_PLATE_UNIT_ADDED", function(event, unitId)
         KillTracker:ScanUnit(unitId)
     end)
+
+    -- Arena match tracking
+    KillTracker:InitArenaTracker()
+end
+
+----------------------------------------------------------------------
+-- Arena Match Tracker (local only — no sync)
+-- Records every arena match: bracket, result, rating, full scoreboard
+----------------------------------------------------------------------
+local arenaState = { inArena = false, recorded = false, enterTime = 0 }
+
+function KillTracker:InitArenaTracker()
+    -- Detect arena entry
+    Deadpool:RegisterEvent("PLAYER_ENTERING_WORLD", function()
+        local inInstance, instanceType = IsInInstance()
+        if inInstance and instanceType == "arena" then
+            if not arenaState.inArena then
+                arenaState.inArena = true
+                arenaState.recorded = false
+                arenaState.enterTime = time()
+                Deadpool:Debug("Arena entered")
+            end
+        else
+            if arenaState.inArena then
+                -- Left arena — last chance to capture result
+                if not arenaState.recorded then
+                    KillTracker:CaptureArenaResult()
+                end
+                arenaState.inArena = false
+            end
+        end
+    end)
+
+    -- Match end detection — delay to let scoreboard data populate
+    Deadpool:RegisterEvent("UPDATE_BATTLEFIELD_STATUS", function()
+        if not arenaState.inArena or arenaState.recorded then return end
+        -- Check immediately and again after delays (data arrives async)
+        KillTracker:CaptureArenaResult()
+        C_Timer.After(1, function()
+            if not arenaState.recorded then KillTracker:CaptureArenaResult() end
+        end)
+        C_Timer.After(3, function()
+            if not arenaState.recorded then KillTracker:CaptureArenaResult() end
+        end)
+    end)
+end
+
+function KillTracker:CaptureArenaResult()
+    if arenaState.recorded then return end
+
+    -- GetBattlefieldWinner: nil = ongoing, 0 = Green team, 1 = Gold team
+    local winner = GetBattlefieldWinner and GetBattlefieldWinner()
+    if winner == nil then return end  -- match still in progress
+
+    local numScores = GetNumBattlefieldScores and GetNumBattlefieldScores() or 0
+    if numScores == 0 then return end  -- scoreboard not ready
+
+    arenaState.recorded = true
+
+    -- Find which team we're on
+    local myName = UnitName("player")
+    local myTeam = nil
+    local scores = {}
+
+    for i = 1, numScores do
+        local name, killingBlows, honorKills, deaths, honorGained, faction,
+              race, class, classToken, damageDone, healingDone = GetBattlefieldScore(i)
+        if name then
+            local shortName = name:match("^(.-)%-") or name
+            scores[#scores + 1] = {
+                name = shortName,
+                fullName = name,
+                class = classToken,
+                kills = killingBlows or 0,
+                deaths = deaths or 0,
+                damage = damageDone or 0,
+                healing = healingDone or 0,
+                faction = faction,
+            }
+            if shortName == myName or name == myName then
+                myTeam = faction
+            end
+        end
+    end
+
+    if myTeam == nil then
+        Deadpool:Debug("Arena: couldn't determine team")
+        return
+    end
+
+    -- Split into team + opponents
+    local team, opponents = {}, {}
+    local myKills, myDeaths, myDamage, myHealing = 0, 0, 0, 0
+    for _, s in ipairs(scores) do
+        s.isEnemy = (s.faction ~= myTeam)
+        if s.isEnemy then
+            opponents[#opponents + 1] = s.name
+        else
+            if s.name ~= myName then
+                team[#team + 1] = s.name
+            else
+                myKills = s.kills
+                myDeaths = s.deaths
+                myDamage = s.damage
+                myHealing = s.healing
+            end
+        end
+    end
+
+    local won = (winner == myTeam)
+    local teamSize = #team + 1  -- us + teammates
+    local bracket = teamSize .. "v" .. teamSize
+
+    -- Rating from GetBattlefieldTeamInfo(teamIndex)
+    -- Returns: teamName, oldRating, newRating, currentRating
+    local oldRating, newRating = 0, 0
+    if GetBattlefieldTeamInfo then
+        for teamIdx = 0, 1 do
+            local ok, teamName, oldR, newR, curR = pcall(GetBattlefieldTeamInfo, teamIdx)
+            if ok and oldR and newR then
+                -- Check if this team index matches our faction
+                if teamIdx == myTeam then
+                    oldRating = oldR or 0
+                    newRating = newR or 0
+                end
+            end
+        end
+        -- Fallback: try 1-indexed
+        if oldRating == 0 and newRating == 0 then
+            for teamIdx = 1, 2 do
+                local ok, teamName, oldR, newR, curR = pcall(GetBattlefieldTeamInfo, teamIdx)
+                if ok and oldR and newR then
+                    if (teamIdx - 1) == myTeam then
+                        oldRating = oldR or 0
+                        newRating = newR or 0
+                    end
+                end
+            end
+        end
+    end
+
+    -- Get map name
+    local mapName = ""
+    for i = 1, 3 do
+        local status, mName = GetBattlefieldStatus(i)
+        if mName and mName ~= "" then
+            mapName = mName
+            break
+        end
+    end
+
+    -- Duration
+    local duration = time() - (arenaState.enterTime or time())
+
+    -- Build entry
+    local entry = {
+        time = time(),
+        bracket = bracket,
+        won = won,
+        oldRating = oldRating,
+        newRating = newRating,
+        team = team,
+        opponents = opponents,
+        map = mapName,
+        duration = duration,
+        myKills = myKills,
+        myDeaths = myDeaths,
+        myDamage = myDamage,
+        myHealing = myHealing,
+        scores = scores,
+    }
+
+    if not Deadpool.db.arenaLog then Deadpool.db.arenaLog = {} end
+    table.insert(Deadpool.db.arenaLog, 1, entry)
+    while #Deadpool.db.arenaLog > 500 do
+        table.remove(Deadpool.db.arenaLog)
+    end
+
+    -- Announce
+    local result = won and (Deadpool.colors.green .. "WIN") or (Deadpool.colors.red .. "LOSS")
+    local ratingStr = ""
+    if newRating > 0 then
+        local change = newRating - oldRating
+        local changeColor = change >= 0 and Deadpool.colors.green or Deadpool.colors.red
+        local changeStr = change >= 0 and ("+" .. change) or tostring(change)
+        ratingStr = " " .. newRating .. " (" .. changeColor .. changeStr .. "|r)"
+    end
+    Deadpool:Print(result .. "|r " .. bracket .. ratingStr ..
+        "  " .. Deadpool.colors.grey .. myKills .. "/" .. myDeaths .. " K/D|r")
+
+    if Deadpool.RefreshUI then Deadpool:RefreshUI() end
 end
 
 -- Track who last attacked us for auto-KOS
@@ -70,8 +261,9 @@ end
 -- Combat Log: Killing Blow Detection
 ----------------------------------------------------------------------
 function KillTracker:OnCombatLogEvent()
-    -- Skip ALL tracking in battlegrounds and arenas
+    -- Skip ALL tracking in battlegrounds, arenas, and sanctuary zones
     if self:IsInBGOrArena() then return end
+    if Deadpool:IsInSanctuary() then return end
 
     local timestamp, subevent, hideCaster,
           sourceGUID, sourceName, sourceFlags, sourceRaidFlags,
@@ -265,11 +457,8 @@ function KillTracker:ProcessKillingBlow(sourceGUID, sourceName, sourceFlags, des
     -- Award assist points (75%) to party/raid members who damaged the victim
     -- but didn't get the killing blow
     if destGUID and recentDamageToHostile[destGUID] then
-        local gc = Deadpool:GetPointsConfig()
         local isKOS = Deadpool:IsKOS(victimFullName)
-        local hasBounty = Deadpool:HasActiveBounty(victimFullName)
-        local basePoints = hasBounty and (gc.pointsPerBountyKill or 100)
-            or (isKOS and (gc.pointsPerKOSKill or 25) or (gc.pointsPerKill or 5))
+        local basePoints = isKOS and 25 or 10
         local assistPoints = math.floor(basePoints * 0.75)
         if assistPoints > 0 then
             for playerName, timestamp in pairs(recentDamageToHostile[destGUID]) do
@@ -419,15 +608,8 @@ function KillTracker:AlertKOS(fullName, guid)
         local location = zone
         if subZone and subZone ~= "" then location = location .. " - " .. subZone end
 
-        local bountyTag = ""
-        if Deadpool:HasActiveBounty(fullName) then
-            local bounty = Deadpool:GetBounty(fullName)
-            local reward = (bounty.bountyGold or 0) > 0 and (bounty.bountyGold .. "g") or ((bounty.bountyPoints or 0) .. "pts")
-            bountyTag = Deadpool.colors.gold .. " [BOUNTY: " .. reward .. "]|r"
-        end
-
         Deadpool:Print(Deadpool.colors.red .. "TARGET ACQUIRED|r — " ..
-            display .. bountyTag .. " spotted in " ..
+            display .. " spotted in " ..
             Deadpool.colors.yellow .. location .. "|r")
     end
 
@@ -527,11 +709,20 @@ end
 ----------------------------------------------------------------------
 -- Get player info from GUID
 ----------------------------------------------------------------------
+local guidInfoCache = {}  -- [guid] = { class, race, time }
+local GUID_CACHE_TTL = 300  -- cache GUID lookups for 5 minutes
+
 function KillTracker:GetInfoFromGUID(guid)
     if not guid then return nil, nil, nil end
+    -- Check cache first to avoid hammering GetPlayerInfoByGUID
+    local cached = guidInfoCache[guid]
+    if cached and (time() - cached.time) < GUID_CACHE_TTL then
+        return cached.class, cached.race, nil
+    end
     -- GetPlayerInfoByGUID returns: localizedClass, englishClass, localizedRace, englishRace, sex, name, realm
     local ok, localClass, engClass, localRace, engRace, sex, name, realm = pcall(GetPlayerInfoByGUID, guid)
     if ok and engClass then
+        guidInfoCache[guid] = { class = engClass, race = localRace, time = time() }
         return engClass, localRace, nil  -- level not available from GUID
     end
     return nil, nil, nil
@@ -542,6 +733,7 @@ end
 ----------------------------------------------------------------------
 function KillTracker:ScanUnit(unitId)
     if not unitId then return end
+    if Deadpool:IsInSanctuary() then return end
     if not UnitExists(unitId) then return end
     if not UnitIsPlayer(unitId) then return end
     if not UnitIsEnemy("player", unitId) then return end

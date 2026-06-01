@@ -5,11 +5,11 @@
 
 local DEFAULTS = {
     kosList = {},       -- ["Name-Realm"] = { KOS entry data }
-    bounties = {},      -- ["Name-Realm"] = { bounty contract data }
     killLog = {},       -- ordered list of kills (newest first)
     deathLog = {},      -- ordered list of deaths (newest first)
     enemySheet = {},    -- ["Name-Realm"] = { enemy player aggregated data }
     scoreboard = {},    -- ["Name-Realm"] = { guild member score data }
+    arenaLog = {},      -- ordered list of arena matches (newest first)
     settings = {
         debug = false,
         announceKills = true,
@@ -40,17 +40,8 @@ local DEFAULTS = {
         showAlertFrame = true,
         alertFramePos = nil,          -- {point, relPoint, x, y}
     },
-    -- GM-managed guild config (syncs to all members, latest timestamp wins)
+    -- Guild config (syncs to all members, latest timestamp wins)
     guildConfig = {
-        pointsPerKill = 10,
-        pointsPerKOSKill = 25,
-        pointsPerBountyKill = 100,
-        pointsUnderdogMultiplier3 = 2.0,   -- 3-5 levels higher
-        pointsUnderdogMultiplier6 = 3.0,   -- 6+ levels higher
-        pointsLowbieRange = 5,             -- within this many levels = full points
-        pointsLowbieReduction = 0.5,       -- 50% for 1 tier below range
-        pointsLowbieFloor = 1,             -- kills far below level
-        pointsLowbieTier2 = 10,            -- 2nd tier: this many levels below = floor
         managers = {},                     -- ["Name-Realm"] = true, delegated by GM
         warGuilds = {},                    -- ["Guild Name"] = true, guild-wide war declarations
         scoreboardResetAt = 0,             -- timestamp of last scoreboard reset
@@ -61,7 +52,7 @@ local DEFAULTS = {
         updatedBy = "",
         updatedAt = 0,                     -- unix timestamp, latest wins
     },
-    syncVersion = 0,    -- incremented on KOS/bounty changes for sync protocol
+    syncVersion = 0,    -- incremented on KOS changes for sync protocol
     lastSync = 0,       -- timestamp of last full sync
 }
 
@@ -149,7 +140,7 @@ end
 
 function Deadpool:WipeGuildData(reason)
     local guildTables = {
-        "kosList", "bounties", "killLog", "deathLog",
+        "kosList", "killLog", "deathLog",
         "enemySheet", "scoreboard", "guildConfig",
     }
     for _, key in ipairs(guildTables) do
@@ -186,7 +177,7 @@ function Deadpool:MigrateFromCharDB()
     end
 
     local dataKeys = {
-        "kosList", "bounties", "enemySheet", "scoreboard",
+        "kosList", "enemySheet", "scoreboard",
     }
     local migrated = 0
 
@@ -345,39 +336,6 @@ end
 ----------------------------------------------------------------------
 -- Bounty data helpers
 ----------------------------------------------------------------------
-function Deadpool:GetBounty(fullName)
-    return self.db.bounties[fullName]
-end
-
-function Deadpool:HasActiveBounty(fullName)
-    local b = self.db.bounties[fullName]
-    return b and not b.expired
-end
-
-function Deadpool:GetActiveBounties()
-    local list = {}
-    local source = Deadpool.demoData:GetMergedBounties()
-    for fullName, bounty in pairs(source) do
-        if not bounty.expired then
-            bounty._key = fullName
-            table.insert(list, bounty)
-        end
-    end
-    table.sort(list, function(a, b) return (a.bountyGold or 0) > (b.bountyGold or 0) end)
-    return list
-end
-
-function Deadpool:GetAllBounties()
-    local list = {}
-    local source = Deadpool.demoData:GetMergedBounties()
-    for fullName, bounty in pairs(source) do
-        bounty._key = fullName
-        table.insert(list, bounty)
-    end
-    table.sort(list, function(a, b) return (a.placedDate or 0) > (b.placedDate or 0) end)
-    return list
-end
-
 ----------------------------------------------------------------------
 -- Kill log helpers
 ----------------------------------------------------------------------
@@ -398,8 +356,6 @@ function Deadpool:GetKillLog(filter)
     local filtered = {}
     for _, entry in ipairs(source) do
         if filter == "kos" and entry.isKOS then
-            table.insert(filtered, entry)
-        elseif filter == "bounty" and entry.isBounty then
             table.insert(filtered, entry)
         end
     end
@@ -495,7 +451,6 @@ function Deadpool:GetOrCreateScore(playerFullName)
         self.db.scoreboard[playerFullName] = {
             name = playerFullName,
             totalKills = 0,
-            bountyKills = 0,
             kosKills = 0,
             randomKills = 0,
             totalPoints = 0,

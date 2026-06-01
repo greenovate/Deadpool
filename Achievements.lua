@@ -14,98 +14,154 @@ Deadpool:RegisterModule("Achievements", Achievements)
 ----------------------------------------------------------------------
 local ACHIEVEMENT_LIST = {
     -- MILESTONES
-    { id=1,  cat="MILESTONES", name="First Blood",       desc="Get your first PvP kill",              pts=10,  type="score",  key="totalKills",    goal=1 },
-    { id=2,  cat="MILESTONES", name="Bounty Collector",  desc="Kill a bounty target",                 pts=25,  type="score",  key="bountyKills",   goal=1 },
-    { id=3,  cat="MILESTONES", name="Target Acquired",   desc="Kill a KOS target",                    pts=25,  type="score",  key="kosKills",      goal=1 },
-    { id=4,  cat="MILESTONES", name="Hired Gun",         desc="Complete your first daily quest",       pts=15,  type="counter", key="quests_daily",  goal=1 },
+    { id=1,  cat="MILESTONES", name="First Blood",       desc="Get your first PvP kill",              pts=10,  type="score",  key="totalKills",    goal=1,
+      lore="Every killer remembers their first. The moment the blade lands and you realize — you're not the hero of this story." },
+    { id=3,  cat="MILESTONES", name="Target Acquired",   desc="Kill a KOS target",                    pts=25,  type="score",  key="kosKills",      goal=1,
+      lore="They made the list. You made the delivery. Nothing personal — except it absolutely is." },
+    { id=4,  cat="MILESTONES", name="Hired Gun",         desc="Complete your first daily quest",       pts=15,  type="counter", key="quests_daily",  goal=1,
+      lore="A merc's gotta eat. Take the job, do the work, collect the check. Welcome to the grind." },
 
     -- KILL COUNT
-    { id=10, cat="KILL COUNT", name="Getting Started",   desc="Get 10 PvP kills",                     pts=25,  type="score",  key="totalKills",    goal=10 },
-    { id=11, cat="KILL COUNT", name="Body Count",        desc="Get 50 PvP kills",                     pts=50,  type="score",  key="totalKills",    goal=50 },
-    { id=12, cat="KILL COUNT", name="Serial Killer",     desc="Get 100 PvP kills",                    pts=100, type="score",  key="totalKills",    goal=100 },
-    { id=13, cat="KILL COUNT", name="Mass Murderer",     desc="Get 250 PvP kills",                    pts=150, type="score",  key="totalKills",    goal=250 },
-    { id=14, cat="KILL COUNT", name="Genocide",          desc="Get 500 PvP kills",                    pts=250, type="score",  key="totalKills",    goal=500 },
-    { id=15, cat="KILL COUNT", name="The Deadpool",      desc="Get 1,000 PvP kills",                  pts=500, type="score",  key="totalKills",    goal=1000 },
+    { id=10, cat="KILL COUNT", name="Getting Started",   desc="Get 10 PvP kills",                     pts=25,  type="score",  key="totalKills",    goal=10,
+      lore="Double digits. Your name is starting to circulate in the wrong taverns." },
+    { id=11, cat="KILL COUNT", name="Body Count",        desc="Get 50 PvP kills",                     pts=50,  type="score",  key="totalKills",    goal=50,
+      lore="Fifty souls and counting. The gravediggers in Hillsbrad are filing a union complaint." },
+    { id=12, cat="KILL COUNT", name="Serial Killer",     desc="Get 100 PvP kills",                    pts=100, type="score",  key="totalKills",    goal=100,
+      lore="Triple digits. At this point you're not a player — you're a weather event." },
+    { id=13, cat="KILL COUNT", name="Mass Murderer",     desc="Get 250 PvP kills",                    pts=150, type="score",  key="totalKills",    goal=250,
+      lore="A quarter thousand corpses. The Spirit Healers have started recognizing your victims by name." },
+    { id=14, cat="KILL COUNT", name="Genocide",          desc="Get 500 PvP kills",                    pts=250, type="score",  key="totalKills",    goal=500,
+      lore="Half a thousand. Somewhere, a faction leader just felt a cold shiver." },
+    { id=15, cat="KILL COUNT", name="The Deadpool",      desc="Get 1,000 PvP kills",                  pts=500, type="score",  key="totalKills",    goal=1000,
+      lore="One thousand confirmed kills. You ARE the Deadpool now. Maximum effort wasn't just a catchphrase." },
 
     -- STREAKS
-    { id=20, cat="STREAKS",    name="Double Tap",        desc="Achieve a 2-kill streak",              pts=10,  type="score",  key="bestStreak",    goal=2 },
-    { id=21, cat="STREAKS",    name="Hat Trick",         desc="Achieve a 3-kill streak",              pts=25,  type="score",  key="bestStreak",    goal=3 },
-    { id=22, cat="STREAKS",    name="Rampage",           desc="Achieve a 5-kill streak",              pts=50,  type="score",  key="bestStreak",    goal=5 },
-    { id=23, cat="STREAKS",    name="Unstoppable",       desc="Achieve an 8-kill streak",             pts=100, type="score",  key="bestStreak",    goal=8 },
-    { id=24, cat="STREAKS",    name="Godlike",           desc="Achieve a 10-kill streak",             pts=200, type="score",  key="bestStreak",    goal=10 },
-    { id=25, cat="STREAKS",    name="Are You Cheating?", desc="Achieve a 15-kill streak",             pts=500, type="score",  key="bestStreak",    goal=15 },
+    { id=20, cat="STREAKS",    name="Double Tap",        desc="Achieve a 2-kill streak",              pts=10,  type="score",  key="bestStreak",    goal=2,
+      lore="Rule #2: Always double tap. One kill is luck. Two is a pattern." },
+    { id=21, cat="STREAKS",    name="Hat Trick",         desc="Achieve a 3-kill streak",              pts=25,  type="score",  key="bestStreak",    goal=3,
+      lore="Three in a row. The enemy team is starting to type your name in /bg chat." },
+    { id=22, cat="STREAKS",    name="Rampage",           desc="Achieve a 5-kill streak",              pts=50,  type="score",  key="bestStreak",    goal=5,
+      lore="Five consecutive kills. You're not on a streak — you're on a warpath." },
+    { id=23, cat="STREAKS",    name="Unstoppable",       desc="Achieve an 8-kill streak",             pts=100, type="score",  key="bestStreak",    goal=8,
+      lore="Eight kills without dying. The enemy has stopped trying to 1v1 you and started avoiding your zip code." },
+    { id=24, cat="STREAKS",    name="Godlike",           desc="Achieve a 10-kill streak",             pts=200, type="score",  key="bestStreak",    goal=10,
+      lore="Ten kills. Zero deaths. You've transcended PvP and entered folklore." },
+    { id=25, cat="STREAKS",    name="Are You Cheating?", desc="Achieve a 15-kill streak",             pts=500, type="score",  key="bestStreak",    goal=15,
+      lore="Fifteen kills in a row. At least three people have opened a GM ticket about you by now." },
 
     -- CLASS MASTERY
-    { id=30, cat="CLASS",      name="Jack of All Trades",desc="Kill every enemy class at least once", pts=50,  type="set_size", key="classes_killed", goal=9 },
-    { id=31, cat="CLASS",      name="Class Specialist",  desc="Kill 50 of any single class",          pts=75,  type="counter", key="best_class_kills", goal=50 },
-    { id=32, cat="CLASS",      name="Equal Opportunity", desc="Kill 10 of every enemy class",         pts=200, type="counter", key="min_class_kills", goal=10 },
-    { id=33, cat="CLASS",      name="Rogue Stomper",     desc="Kill 25 Rogues",                       pts=50,  type="counter", key="kills_ROGUE",   goal=25 },
-    { id=34, cat="CLASS",      name="Mage Melter",       desc="Kill 25 Mages",                        pts=50,  type="counter", key="kills_MAGE",    goal=25 },
-    { id=35, cat="CLASS",      name="Priest Punisher",   desc="Kill 25 Priests",                      pts=50,  type="counter", key="kills_PRIEST",  goal=25 },
-    { id=36, cat="CLASS",      name="Warrior Wrecker",   desc="Kill 25 Warriors",                     pts=50,  type="counter", key="kills_WARRIOR", goal=25 },
-    { id=37, cat="CLASS",      name="Hunter Hunted",     desc="Kill 25 Hunters",                      pts=50,  type="counter", key="kills_HUNTER",  goal=25 },
-    { id=38, cat="CLASS",      name="Totem Stomper",     desc="Kill 25 Shamans",                      pts=50,  type="counter", key="kills_SHAMAN",  goal=25 },
-    { id=39, cat="CLASS",      name="Demon Slayer",      desc="Kill 25 Warlocks",                     pts=50,  type="counter", key="kills_WARLOCK", goal=25 },
-    { id=110,cat="CLASS",      name="Bear Trap",         desc="Kill 25 Druids",                       pts=50,  type="counter", key="kills_DRUID",   goal=25 },
-    { id=111,cat="CLASS",      name="Bubble Popper",     desc="Kill 25 Paladins",                     pts=50,  type="counter", key="kills_PALADIN", goal=25 },
-
-    -- BOUNTY
-    { id=40, cat="BOUNTY",     name="Contract Killer",   desc="Complete 1 bounty contract",           pts=50,  type="counter", key="bounties_completed", goal=1 },
-    { id=41, cat="BOUNTY",     name="Bounty Hunter",     desc="Complete 5 bounty contracts",          pts=100, type="counter", key="bounties_completed", goal=5 },
-    { id=42, cat="BOUNTY",     name="Dead or Alive",     desc="Complete 10 bounty contracts",         pts=200, type="counter", key="bounties_completed", goal=10 },
-    { id=43, cat="BOUNTY",     name="Place a Hit",       desc="Place your first bounty",              pts=25,  type="counter", key="bounties_placed",    goal=1 },
+    { id=30, cat="CLASS",      name="Jack of All Trades",desc="Kill every enemy class at least once", pts=50,  type="set_size", key="classes_killed", goal=9,
+      lore="Nine classes, nine notches. You don't discriminate — everyone's equal in the graveyard." },
+    { id=31, cat="CLASS",      name="Class Specialist",  desc="Kill 50 of any single class",          pts=75,  type="counter", key="best_class_kills", goal=50,
+      lore="You've found your favorite prey. They see you coming and start pre-writing their corpse run route." },
+    { id=32, cat="CLASS",      name="Equal Opportunity", desc="Kill 10 of every enemy class",         pts=200, type="counter", key="min_class_kills", goal=10,
+      lore="Ten of each. You're not a specialist — you're a generalist of violence." },
+    { id=33, cat="CLASS",      name="Rogue Stomper",     desc="Kill 25 Rogues",                       pts=50,  type="counter", key="kills_ROGUE",   goal=25,
+      lore="They thought the shadows would save them. Twenty-five Rogues learned the hard way that you see through the dark." },
+    { id=34, cat="CLASS",      name="Mage Melter",       desc="Kill 25 Mages",                        pts=50,  type="counter", key="kills_MAGE",    goal=25,
+      lore="Ice Block only delays the inevitable. You've sent twenty-five Mages to detention — permanently." },
+    { id=35, cat="CLASS",      name="Priest Punisher",   desc="Kill 25 Priests",                      pts=50,  type="counter", key="kills_PRIEST",  goal=25,
+      lore="Prayer doesn't help when the answer is always no. Twenty-five Priests found out the Light has limits." },
+    { id=36, cat="CLASS",      name="Warrior Wrecker",   desc="Kill 25 Warriors",                     pts=50,  type="counter", key="kills_WARRIOR", goal=25,
+      lore="All that plate armor and they still drop. Twenty-five tin cans opened the hard way." },
+    { id=37, cat="CLASS",      name="Hunter Hunted",     desc="Kill 25 Hunters",                      pts=50,  type="counter", key="kills_HUNTER",  goal=25,
+      lore="Feign Death doesn't work when the killer checks. Twenty-five Hunters learned you don't bluff." },
+    { id=38, cat="CLASS",      name="Totem Stomper",     desc="Kill 25 Shamans",                      pts=50,  type="counter", key="kills_SHAMAN",  goal=25,
+      lore="Totems down. Shaman down. The elements didn't answer fast enough — twenty-five times." },
+    { id=39, cat="CLASS",      name="Demon Slayer",      desc="Kill 25 Warlocks",                     pts=50,  type="counter", key="kills_WARLOCK", goal=25,
+      lore="Fear breaks. Deathcoil fades. Soulstones don't matter when you're camping the corpse." },
+    { id=110,cat="CLASS",      name="Bear Trap",         desc="Kill 25 Druids",                       pts=50,  type="counter", key="kills_DRUID",   goal=25,
+      lore="Shift all you want — cat, bear, moonkin — it all dies the same. Twenty-five shapeshifters reshaped into corpses." },
+    { id=111,cat="CLASS",      name="Bubble Popper",     desc="Kill 25 Paladins",                     pts=50,  type="counter", key="kills_PALADIN", goal=25,
+      lore="Divine Shield has an expiration date. You waited. Twenty-five times." },
 
     -- KOS
-    { id=50, cat="KOS",        name="Watchlist",         desc="Add your first KOS target",            pts=10,  type="counter", key="kos_added",          goal=1 },
-    { id=51, cat="KOS",        name="Executioner",       desc="Kill 10 unique KOS targets",           pts=75,  type="set_size", key="unique_kos_killed", goal=10 },
-    { id=52, cat="KOS",        name="The Punisher",      desc="Kill 25 unique KOS targets",           pts=150, type="set_size", key="unique_kos_killed", goal=25 },
-    { id=53, cat="KOS",        name="Clean Sweep",       desc="Kill 50 unique KOS targets",           pts=300, type="set_size", key="unique_kos_killed", goal=50 },
-    { id=54, cat="KOS",        name="KOS Veteran",       desc="Kill 100 KOS targets (total)",         pts=150, type="score",   key="kosKills",          goal=100 },
+    { id=50, cat="KOS",        name="Watchlist",         desc="Add your first KOS target",            pts=10,  type="counter", key="kos_added",          goal=1,
+      lore="Ink on parchment. A name on a list. It's not a threat — it's a promise." },
+    { id=51, cat="KOS",        name="Executioner",       desc="Kill 10 unique KOS targets",           pts=75,  type="set_size", key="unique_kos_killed", goal=10,
+      lore="Ten names crossed off. The list gets shorter but your reputation gets longer." },
+    { id=52, cat="KOS",        name="The Punisher",      desc="Kill 25 unique KOS targets",           pts=150, type="set_size", key="unique_kos_killed", goal=25,
+      lore="Twenty-five personal vendettas fulfilled. Justice is a loose term — you prefer 'results.'" },
+    { id=53, cat="KOS",        name="Clean Sweep",       desc="Kill 50 unique KOS targets",           pts=300, type="set_size", key="unique_kos_killed", goal=50,
+      lore="Fifty unique targets eliminated. Your KOS list is less of a list and more of a history book." },
+    { id=54, cat="KOS",        name="KOS Veteran",       desc="Kill 100 KOS targets (total)",         pts=150, type="score",   key="kosKills",          goal=100,
+      lore="A hundred KOS kills. Some of them have started logging off when you log on." },
 
     -- ZONES
-    { id=60, cat="ZONES",      name="World Traveler",    desc="Get kills in 5 different zones",       pts=50,  type="set_size", key="zones_killed_in",   goal=5 },
-    { id=61, cat="ZONES",      name="Continental",       desc="Get kills in 10 different zones",      pts=100, type="set_size", key="zones_killed_in",   goal=10 },
-    { id=62, cat="ZONES",      name="Both Worlds",       desc="Get kills in Outland and Azeroth",     pts=50,  type="set_size", key="continents_killed",  goal=2 },
-    { id=63, cat="ZONES",      name="Hellfire Veteran",  desc="Kill 10 players in Hellfire Peninsula",pts=50,  type="counter", key="kills_z_Hellfire Peninsula", goal=10 },
-    { id=64, cat="ZONES",      name="Nagrand Champion",  desc="Kill 10 players in Nagrand",           pts=50,  type="counter", key="kills_z_Nagrand",    goal=10 },
-    { id=65, cat="ZONES",      name="Terokkar Terror",   desc="Kill 10 players in Terokkar Forest",   pts=50,  type="counter", key="kills_z_Terokkar Forest", goal=10 },
-    { id=66, cat="ZONES",      name="Zangarmarsh Menace",desc="Kill 10 players in Zangarmarsh",       pts=50,  type="counter", key="kills_z_Zangarmarsh", goal=10 },
-    { id=67, cat="ZONES",      name="Edge Lord",         desc="Kill 10 players in Blade's Edge Mtns", pts=50,  type="counter", key="kills_z_Blade's Edge Mountains", goal=10 },
-    { id=68, cat="ZONES",      name="Shadow Walker",     desc="Kill 10 players in Shadowmoon Valley", pts=50,  type="counter", key="kills_z_Shadowmoon Valley", goal=10 },
-    { id=69, cat="ZONES",      name="Netherstorm Raider", desc="Kill 10 players in Netherstorm",      pts=50,  type="counter", key="kills_z_Netherstorm", goal=10 },
-    { id=100,cat="ZONES",      name="Outland Assassin",  desc="Kill players in all 7 Outland zones",  pts=300, type="set_size", key="outland_zones_killed", goal=7 },
-    { id=101,cat="ZONES",      name="World Wide Assassin",desc="Kill players in 15 different zones",  pts=500, type="set_size", key="zones_killed_in",   goal=15 },
+    { id=60, cat="ZONES",      name="World Traveler",    desc="Get kills in 5 different zones",       pts=50,  type="set_size", key="zones_killed_in",   goal=5,
+      lore="Five zones painted red. You're not just a local menace — you're going regional." },
+    { id=61, cat="ZONES",      name="Continental",       desc="Get kills in 10 different zones",      pts=100, type="set_size", key="zones_killed_in",   goal=10,
+      lore="Ten zones. Your infamy has outgrown any single map." },
+    { id=62, cat="ZONES",      name="Both Worlds",       desc="Get kills in Outland and Azeroth",     pts=50,  type="set_size", key="continents_killed",  goal=2,
+      lore="From Elwynn to Nagrand, no world is safe. The Dark Portal was just a door to more victims." },
+    { id=63, cat="ZONES",      name="Hellfire Veteran",  desc="Kill 10 players in Hellfire Peninsula",pts=50,  type="counter", key="kills_z_Hellfire Peninsula", goal=10,
+      lore="Hellfire lives up to its name when you're around. The Peninsula runs red." },
+    { id=64, cat="ZONES",      name="Nagrand Champion",  desc="Kill 10 players in Nagrand",           pts=50,  type="counter", key="kills_z_Nagrand",    goal=10,
+      lore="The floating islands of Nagrand — beautiful, serene, and full of your victims." },
+    { id=65, cat="ZONES",      name="Terokkar Terror",   desc="Kill 10 players in Terokkar Forest",   pts=50,  type="counter", key="kills_z_Terokkar Forest", goal=10,
+      lore="The bone wastes have fresh additions. Ten players thought Terokkar was a quiet zone." },
+    { id=66, cat="ZONES",      name="Zangarmarsh Menace",desc="Kill 10 players in Zangarmarsh",       pts=50,  type="counter", key="kills_z_Zangarmarsh", goal=10,
+      lore="Bodies sink fast in the marshes. Ten players discovered Zangarmarsh has more to fear than spore bats." },
+    { id=67, cat="ZONES",      name="Edge Lord",         desc="Kill 10 players in Blade's Edge Mtns", pts=50,  type="counter", key="kills_z_Blade's Edge Mountains", goal=10,
+      lore="The name finally makes sense. You ARE the edge in Blade's Edge." },
+    { id=68, cat="ZONES",      name="Shadow Walker",     desc="Kill 10 players in Shadowmoon Valley", pts=50,  type="counter", key="kills_z_Shadowmoon Valley", goal=10,
+      lore="Illidan isn't the only one they're not prepared for. Ten kills in Shadowmoon and counting." },
+    { id=69, cat="ZONES",      name="Netherstorm Raider", desc="Kill 10 players in Netherstorm",      pts=50,  type="counter", key="kills_z_Netherstorm", goal=10,
+      lore="Between the mana storms and you, Netherstorm is the most dangerous zone in Outland." },
+    { id=100,cat="ZONES",      name="Outland Assassin",  desc="Kill players in all 7 Outland zones",  pts=300, type="set_size", key="outland_zones_killed", goal=7,
+      lore="Every corner of Outland knows your name. Seven zones, zero safe havens." },
+    { id=101,cat="ZONES",      name="World Wide Assassin",desc="Kill players in 15 different zones",  pts=500, type="set_size", key="zones_killed_in",   goal=15,
+      lore="Fifteen zones across two worlds. You're not a player — you're a pandemic." },
 
     -- REVENGE
-    { id=70, cat="REVENGE",    name="Payback",           desc="Kill someone who has killed you",      pts=25,  type="counter", key="revenge_kills",      goal=1 },
-    { id=71, cat="REVENGE",    name="Grudge Match",      desc="Kill the same player 10 times",        pts=75,  type="counter", key="grudge_kill_max",    goal=10 },
-    { id=72, cat="REVENGE",    name="Eye for an Eye",    desc="Get 10 revenge kills",                 pts=75,  type="counter", key="revenge_kills",      goal=10 },
-    { id=73, cat="REVENGE",    name="Nemesis Slayer",    desc="Kill the same player 25 times",        pts=200, type="counter", key="grudge_kill_max",    goal=25 },
-    { id=74, cat="REVENGE",    name="Vendetta",          desc="Get 50 revenge kills",                 pts=200, type="counter", key="revenge_kills",      goal=50 },
+    { id=70, cat="REVENGE",    name="Payback",           desc="Kill someone who has killed you",      pts=25,  type="counter", key="revenge_kills",      goal=1,
+      lore="They killed you. You came back. That corpse run was a business expense." },
+    { id=71, cat="REVENGE",    name="Grudge Match",      desc="Kill the same player 10 times",        pts=75,  type="counter", key="grudge_kill_max",    goal=10,
+      lore="Ten times. Same player. At this point it's not revenge — it's a subscription service." },
+    { id=72, cat="REVENGE",    name="Eye for an Eye",    desc="Get 10 revenge kills",                 pts=75,  type="counter", key="revenge_kills",      goal=10,
+      lore="Ten debts repaid in blood. You keep receipts — and they're written in red." },
+    { id=73, cat="REVENGE",    name="Nemesis Slayer",    desc="Kill the same player 25 times",        pts=200, type="counter", key="grudge_kill_max",    goal=25,
+      lore="Twenty-five kills on one target. They've considered transferring servers. Twice." },
+    { id=74, cat="REVENGE",    name="Vendetta",          desc="Get 50 revenge kills",                 pts=200, type="counter", key="revenge_kills",      goal=50,
+      lore="Fifty revenge kills. You don't forgive and you definitely don't forget." },
 
     -- QUESTS
-    { id=80, cat="QUESTS",     name="Merc Work",         desc="Complete 5 daily quests",              pts=25,  type="counter", key="quests_daily",       goal=5 },
-    { id=81, cat="QUESTS",     name="Contract Employee", desc="Complete 25 daily quests",             pts=75,  type="counter", key="quests_daily",       goal=25 },
-    { id=82, cat="QUESTS",     name="Full-Time Merc",    desc="Complete 50 daily quests",             pts=150, type="counter", key="quests_daily",       goal=50 },
-    { id=83, cat="QUESTS",     name="Weekend Warrior",   desc="Complete 3 weekly quests",             pts=50,  type="counter", key="quests_weekly",      goal=3 },
-    { id=84, cat="QUESTS",     name="Overachiever",      desc="Complete all 3 dailies in one day",    pts=100, type="counter", key="all_dailies_days",   goal=1 },
+    { id=80, cat="QUESTS",     name="Merc Work",         desc="Complete 5 daily quests",              pts=25,  type="counter", key="quests_daily",       goal=5,
+      lore="Five contracts completed. The pay's decent and the work keeps things interesting." },
+    { id=81, cat="QUESTS",     name="Contract Employee", desc="Complete 25 daily quests",             pts=75,  type="counter", key="quests_daily",       goal=25,
+      lore="Twenty-five dailies in the books. You're not a freelancer anymore — you're a regular." },
+    { id=82, cat="QUESTS",     name="Full-Time Merc",    desc="Complete 50 daily quests",             pts=150, type="counter", key="quests_daily",       goal=50,
+      lore="Fifty completed contracts. At this point the quest board just auto-fills with your name." },
+    { id=83, cat="QUESTS",     name="Weekend Warrior",   desc="Complete 3 weekly quests",             pts=50,  type="counter", key="quests_weekly",      goal=3,
+      lore="Three weeklies done. Some people raid on weekends. You hunt." },
+    { id=84, cat="QUESTS",     name="Overachiever",      desc="Complete all 3 dailies in one day",    pts=100, type="counter", key="all_dailies_days",   goal=1,
+      lore="All three dailies in a single session. Efficient. Brutal. Professional." },
 
     -- UNDERDOG
-    { id=90, cat="UNDERDOG",   name="Underdog",          desc="Kill a player 6+ levels above you",    pts=50,  type="counter", key="underdog_kills",     goal=1 },
-    { id=91, cat="UNDERDOG",   name="David vs Goliath",  desc="Kill a player 10+ levels above you",   pts=150, type="counter", key="goliath_kills",      goal=1 },
-    { id=92, cat="UNDERDOG",   name="Giant Slayer",      desc="Kill 10 players 6+ levels above you",  pts=200, type="counter", key="underdog_kills",     goal=10 },
-    { id=93, cat="UNDERDOG",   name="Lowbie Protector",  desc="Kill 5 players who are 10+ levels above a guildmate", pts=150, type="counter", key="protector_kills", goal=5 },
+    { id=90, cat="UNDERDOG",   name="Underdog",          desc="Kill a player 6+ levels above you",    pts=50,  type="counter", key="underdog_kills",     goal=1,
+      lore="They had the level advantage. You had something better — the will to win." },
+    { id=91, cat="UNDERDOG",   name="David vs Goliath",  desc="Kill a player 10+ levels above you",   pts=150, type="counter", key="goliath_kills",      goal=1,
+      lore="Ten levels higher and they still fell. Goliath didn't expect the slingshot either." },
+    { id=92, cat="UNDERDOG",   name="Giant Slayer",      desc="Kill 10 players 6+ levels above you",  pts=200, type="counter", key="underdog_kills",     goal=10,
+      lore="Ten giants felled. Level is just a number — skill doesn't have a cap." },
+    { id=93, cat="UNDERDOG",   name="Lowbie Protector",  desc="Kill 5 players who are 10+ levels above a guildmate", pts=150, type="counter", key="protector_kills", goal=5,
+      lore="Five bullies taught that ganking guildmates has consequences. You're the consequence." },
 
     -- DEDICATION
-    { id=120,cat="DEDICATION", name="Dedicated",         desc="Log in 7 different days with kills",   pts=50,  type="counter", key="days_with_kills",    goal=7 },
-    { id=121,cat="DEDICATION", name="Committed",         desc="Log in 30 different days with kills",  pts=150, type="counter", key="days_with_kills",    goal=30 },
-    { id=122,cat="DEDICATION", name="No Life",           desc="Log in 100 different days with kills", pts=500, type="counter", key="days_with_kills",    goal=100 },
-    { id=123,cat="DEDICATION", name="Completionist",     desc="Earn 25 achievements",                 pts=200, type="counter", key="total_achievements", goal=25 },
-    { id=124,cat="DEDICATION", name="True Deadpool",     desc="Earn 50 achievements",                 pts=500, type="counter", key="total_achievements", goal=50 },
+    { id=120,cat="DEDICATION", name="Dedicated",         desc="Log in 7 different days with kills",   pts=50,  type="counter", key="days_with_kills",    goal=7,
+      lore="Seven days of blood. A full week of proving you're not here to fish." },
+    { id=121,cat="DEDICATION", name="Committed",         desc="Log in 30 different days with kills",  pts=150, type="counter", key="days_with_kills",    goal=30,
+      lore="Thirty days. A full month of consistent carnage. They thought you'd get bored. You didn't." },
+    { id=122,cat="DEDICATION", name="No Life",           desc="Log in 100 different days with kills", pts=500, type="counter", key="days_with_kills",    goal=100,
+      lore="A hundred days of kills. Your guild calls you dedicated. Your enemies call you relentless. Your family calls you never." },
+    { id=123,cat="DEDICATION", name="Completionist",     desc="Earn 25 achievements",                 pts=200, type="counter", key="total_achievements", goal=25,
+      lore="Twenty-five achievements unlocked. You're not just playing the game — you're collecting its trophies." },
+    { id=124,cat="DEDICATION", name="True Deadpool",     desc="Earn 50 achievements",                 pts=500, type="counter", key="total_achievements", goal=50,
+      lore="Fifty achievements. You've mastered every facet of the Deadpool. Maximum effort — achieved." },
 }
 
 -- Category display order
-local CATEGORY_ORDER = { "MILESTONES", "KILL COUNT", "STREAKS", "CLASS", "BOUNTY", "KOS", "ZONES", "REVENGE", "QUESTS", "UNDERDOG", "DEDICATION" }
+local CATEGORY_ORDER = { "MILESTONES", "KILL COUNT", "STREAKS", "CLASS", "KOS", "ZONES", "REVENGE", "QUESTS", "UNDERDOG", "DEDICATION" }
 
 -- Build lookup by id
 local ACH_BY_ID = {}
@@ -210,11 +266,6 @@ function Achievements:Award(ach)
 
     local data = self:GetData()
     data.earned[ach.id] = time()
-
-    -- Add achievement points to scoreboard
-    local myName = Deadpool:GetPlayerFullName()
-    local score = Deadpool:GetOrCreateScore(myName)
-    score.totalPoints = (score.totalPoints or 0) + ach.pts
 
     -- Track total achievements earned for meta-achievements
     self:SetCounter("total_achievements", self:GetEarnedCount())
@@ -326,18 +377,8 @@ function Achievements:OnAllDailiesComplete()
 end
 
 ----------------------------------------------------------------------
--- Bounty/KOS hooks (called from BountyManager)
+-- KOS hooks (called from KillManager)
 ----------------------------------------------------------------------
-function Achievements:OnBountyPlaced()
-    self:IncrementCounter("bounties_placed")
-    self:CheckAll()
-end
-
-function Achievements:OnBountyCompleted()
-    self:IncrementCounter("bounties_completed")
-    self:CheckAll()
-end
-
 function Achievements:OnKOSAdded()
     self:IncrementCounter("kos_added")
     self:CheckAll()
@@ -672,9 +713,22 @@ function Achievements:ShowPopup(achId, linkedPlayer, linkedEarned)
     descText:SetText(ach.desc)
     descText:Show()
 
+    -- Lore flavor text
+    local loreAnchor = descText
+    if ach.lore then
+        local loreText = popupFrame:CreateFontString(nil, "OVERLAY")
+        loreText:SetFont(TM:GetFont(10, "")); loreText:SetPoint("TOP", descText, "BOTTOM", 0, -8)
+        loreText:SetWidth(320); loreText:SetJustifyH("CENTER")
+        loreText:SetText(Deadpool.colors.gold .. "\"" .. ach.lore .. "\"|r")
+        loreText:Show()
+        loreAnchor = loreText
+        -- Make popup taller to fit lore
+        popupFrame:SetHeight(280)
+    end
+
     -- Points
     local ptsText = popupFrame:CreateFontString(nil, "OVERLAY")
-    ptsText:SetFont(TM:GetFont(12, "OUTLINE")); ptsText:SetPoint("TOP", descText, "BOTTOM", 0, -8)
+    ptsText:SetFont(TM:GetFont(12, "OUTLINE")); ptsText:SetPoint("TOP", loreAnchor, "BOTTOM", 0, -8)
     ptsText:Show()
     if showEarned then
         ptsText:SetText(Deadpool.colors.gold .. ach.pts .. " Achievement Points|r")

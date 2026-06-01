@@ -1,10 +1,10 @@
 ----------------------------------------------------------------------
--- Deadpool - Kill on Sight Bounty Tracker & World PvP Scoreboard
+-- Deadpool - Kill on Sight Tracker & World PvP Scoreboard
 -- Core.lua - Namespace, event system, utilities, slash commands
 ----------------------------------------------------------------------
 
 Deadpool = {}
-Deadpool.version = "1.6.2"
+Deadpool.version = "1.7.0"
 Deadpool.prefix = "DEADPOOL"
 Deadpool.modules = {}
 
@@ -131,11 +131,18 @@ function Deadpool:GetSubZone()
     return GetSubZoneText() or ""
 end
 
+-- Cached sanctuary check: refreshed on zone change, avoids calling
+-- GetZonePVPInfo() on every CLEU event (hundreds per second in cities)
+local cachedSanctuary = false
+local sanctuaryCacheTime = 0
+
 function Deadpool:IsInSanctuary()
-    -- Returns true if the player is in a sanctuary zone (PvP disabled)
-    -- GetZonePVPInfo() returns "sanctuary" in cities like Shattrath
+    local now = GetTime()
+    if (now - sanctuaryCacheTime) < 2 then return cachedSanctuary end
+    sanctuaryCacheTime = now
     local pvpType = GetZonePVPInfo()
-    return pvpType == "sanctuary"
+    cachedSanctuary = (pvpType == "sanctuary")
+    return cachedSanctuary
 end
 
 function Deadpool:TimeAgo(timestamp)
@@ -251,11 +258,6 @@ function Deadpool:AwardPointsTo(targetName, amount, reason)
         (reason and reason ~= "" and (" (" .. reason .. ")") or ""))
     if self.RefreshUI then self:RefreshUI() end
     return true
-end
-
--- Get point values from guild config (GM-managed, synced)
-function Deadpool:GetPointsConfig()
-    return self.db.guildConfig
 end
 
 ----------------------------------------------------------------------
@@ -569,26 +571,6 @@ SlashCmdList["DEADPOOL"] = function(msg)
                 Deadpool:Print("Usage: /dp war add|remove <guild name>")
             end
         end
-    elseif cmd == "bounty" then
-        local name, amount, rest2 = rest:match("^(%S+)%s+(%d+)%s*(.*)$")
-        if name and amount then
-            local val = tonumber(amount)
-            -- Check for "pts" or "points" keyword to determine type
-            local bountyType = "gold"
-            local maxKills = 10
-            if rest2 then
-                local r2lower = rest2:lower()
-                if r2lower:find("pts") or r2lower:find("points") then
-                    bountyType = "points"
-                    maxKills = tonumber(rest2:match("(%d+)")) or 10
-                else
-                    maxKills = tonumber(rest2) or 10
-                end
-            end
-            Deadpool:PlaceBounty(name, val, maxKills, bountyType)
-        else
-            Deadpool:Print("Usage: /dp bounty <PlayerName> <amount> [maxKills|pts]")
-        end
     elseif cmd == "score" or cmd == "leaderboard" or cmd == "lb" then
         Deadpool:ShowTab("scoreboard")
     elseif cmd == "list" then
@@ -665,9 +647,7 @@ SlashCmdList["DEADPOOL"] = function(msg)
             score.totalKills = (score.totalKills or 0) + 1
             local pts = k.points or 5
             score.totalPoints = (score.totalPoints or 0) + pts
-            if k.killType == "bounty" then
-                score.bountyKills = (score.bountyKills or 0) + 1
-            elseif k.killType == "kos" then
+            if k.killType == "kos" then
                 score.kosKills = (score.kosKills or 0) + 1
             else
                 score.randomKills = (score.randomKills or 0) + 1
@@ -699,7 +679,6 @@ function Deadpool:PrintHelp()
     self:Print("/dp " .. self.colors.yellow .. "show|r — Toggle the Deadpool window")
     self:Print("/dp " .. self.colors.yellow .. "add <name> [reason]|r — Add to Kill on Sight (or target enemy)")
     self:Print("/dp " .. self.colors.yellow .. "remove <name>|r — Remove from KOS")
-    self:Print("/dp " .. self.colors.yellow .. "bounty <name> <gold> [maxKills]|r — Place a bounty contract")
     self:Print("/dp " .. self.colors.yellow .. "list|r — Print KOS list to chat")
     self:Print("/dp " .. self.colors.yellow .. "score|r — Show scoreboard")
     self:Print("/dp " .. self.colors.yellow .. "log|r — Show kill log")
@@ -734,20 +713,12 @@ function Deadpool:RecalcPoints()
     local killLog = self.db.killLog
     local fixed = 0
     local totalAdded = 0
-    local gc = self:GetPointsConfig()
 
     for _, entry in ipairs(killLog) do
         if entry.killer == myName and (entry.points or 0) == 0 then
             -- Recalculate what points should have been
             local killType = entry.killType or "random"
-            local pts = 0
-            if killType == "bounty" then
-                pts = gc.pointsPerBountyKill or 100
-            elseif killType == "kos" then
-                pts = gc.pointsPerKOSKill or 25
-            else
-                pts = gc.pointsPerKill or 5
-            end
+            local pts = (killType == "kos") and 25 or 10
             -- Apply to entry and score
             entry.points = pts
             totalAdded = totalAdded + pts
@@ -799,9 +770,18 @@ function Deadpool:Init()
     end)
 
     -- Clean scoreboard: remove any non-guild entries (from pre-fix cross-guild contamination)
+    -- Wait for GUILD_ROSTER_UPDATE to ensure roster is actually loaded.
+    -- Using a timer is unreliable — the server may not have sent the
+    -- roster within 10 seconds.
     if IsInGuild() then
-        C_Timer.After(10, function()
+        local rosterCleanDone = false
+        Deadpool:RegisterEvent("GUILD_ROSTER_UPDATE", function()
+            if rosterCleanDone then return end
             Deadpool:RefreshGuildRoster()
+            -- Only clean if we actually have a populated roster
+            local numTotal = GetNumGuildMembers()
+            if numTotal < 2 then return end
+            rosterCleanDone = true
             local removed = 0
             for fullName in pairs(Deadpool.db.scoreboard) do
                 if not Deadpool:IsGuildMember(fullName) then
@@ -816,7 +796,7 @@ function Deadpool:Init()
     end
 
     -- Initialize modules in dependency order (Theme before UI)
-    local initOrder = { "Theme", "BountyManager", "KillTracker", "Quests", "Achievements", "Sync", "Nearby", "UI", "Alerts" }
+    local initOrder = { "Theme", "KillManager", "KillTracker", "Quests", "Achievements", "Sync", "Nearby", "UI", "Alerts" }
     for _, name in ipairs(initOrder) do
         local mod = self.modules[name]
         if mod and mod.Init then

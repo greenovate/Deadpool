@@ -183,11 +183,6 @@ function Deadpool:ShowKOSAlert(fullName, entry)
     alertText:SetTextColor(1, 0.1, 0.1)
 
     local sub = nameDisplay
-    if Deadpool:HasActiveBounty(fullName) then
-        local bounty = Deadpool:GetBounty(fullName)
-        local reward = (bounty.bountyGold or 0) > 0 and (bounty.bountyGold .. "g") or ((bounty.bountyPoints or 0) .. "pts")
-        sub = sub .. "  |cFFFFD700[BOUNTY: " .. reward .. "]|r"
-    end
     if entry.level and entry.level > 0 then
         sub = sub .. "  |cFFAAAAAALv" .. entry.level .. "|r"
     end
@@ -204,10 +199,7 @@ function Deadpool:ShowKillNotification(killerName, victimName, killType)
     if not alertFrame then return end
     if not Deadpool.db.settings.showAlertFrame then return end
 
-    if killType == "bounty" then
-        alertText:SetText("BOUNTY KILL!")
-        alertText:SetTextColor(1, 0.84, 0)
-    elseif killType == "kos" then
+    if killType == "kos" then
         alertText:SetText("KOS ELIMINATED!")
         alertText:SetTextColor(1, 0.1, 0.1)
     else

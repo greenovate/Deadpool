@@ -71,7 +71,6 @@ local function buildCache()
     local now = time()
     local c = {
         kosList = {},
-        bounties = {},
         scoreboard = {},
         enemySheet = {},
         killLog = {},
@@ -96,51 +95,16 @@ local function buildCache()
         }
     end
 
-    -- Bounties: 5 active, 3 expired (mix of gold and points)
-    for i = 1, 8 do
-        local e = FAKE_ENEMIES[i]
-        local fn = e.name .. "-" .. realm
-        local isPointsBounty = (i % 3 == 0)  -- every 3rd bounty is points
-        local gold = isPointsBounty and 0 or (dRand(10) * 25)
-        local pts = isPointsBounty and (dRand(10) * 50) or 0
-        local maxK = dRand(15) + 5
-        local curK = dRand(maxK)
-        local expired = (i > 5)
-        if expired then curK = maxK end
-        local claims = {}
-        for j = 1, curK do
-            claims[j] = {
-                killer = pick(FAKE_GUILDIES) .. "-" .. realm,
-                time = now - dRand(259200),
-                zone = pick(ZONES),
-            }
-        end
-        c.bounties[fn] = {
-            target = fn,
-            bountyGold = gold,
-            bountyPoints = pts,
-            bountyType = isPointsBounty and "points" or "gold",
-            placedBy = pick(FAKE_GUILDIES) .. "-" .. realm,
-            placedDate = now - dRand(432000),
-            maxKills = maxK, currentKills = curK,
-            expired = expired,
-            expiredReason = expired and "Completed" or nil,
-            claims = claims,
-            _demo = true,
-        }
-    end
-
     -- Scoreboard
     for _, name in ipairs(FAKE_GUILDIES) do
         local fn = name .. "-" .. realm
         local kills = dRand(140) + 10
         local kosK = dRand(math.floor(kills * 0.4))
-        local bountyK = dRand(math.floor(kills * 0.15))
-        local randomK = kills - kosK - bountyK
+        local randomK = kills - kosK
         c.scoreboard[fn] = {
             name = fn, totalKills = kills,
-            bountyKills = bountyK, kosKills = kosK, randomKills = randomK,
-            totalPoints = randomK * 5 + kosK * 25 + bountyK * 100 + dRand(200),
+            kosKills = kosK, randomKills = randomK,
+            totalPoints = randomK * 10 + kosK * 25 + dRand(200),
             lastKill = now - dRand(172800),
             killStreak = 0, bestStreak = dRand(12),
             _demo = true,
@@ -163,20 +127,19 @@ local function buildCache()
         }
     end
 
-    -- Kill log: 40 KOS/bounty + 20 random
+    -- Kill log: 40 KOS + 20 random
     for i = 1, 40 do
         local killer = pick(FAKE_GUILDIES)
         local victim = pick(FAKE_ENEMIES)
         local fn = victim.name .. "-" .. realm
         local isKOS = c.kosList[fn] ~= nil
-        local isBounty = c.bounties[fn] ~= nil and not c.bounties[fn].expired
-        local pts = isBounty and 100 or (isKOS and 25 or 5)
+        local pts = isKOS and 25 or 10
         c.killLog[#c.killLog + 1] = {
             killer = killer .. "-" .. realm, victim = fn,
             victimClass = victim.class, victimRace = victim.race, victimLevel = victim.level,
             zone = pick(ZONES), time = now - dRand(432000),
-            isKOS = isKOS, isBounty = isBounty, points = pts,
-            killType = isBounty and "bounty" or (isKOS and "kos" or "random"),
+            isKOS = isKOS, points = pts,
+            killType = isKOS and "kos" or "random",
             _demo = true,
         }
     end
@@ -187,7 +150,7 @@ local function buildCache()
             killer = killer .. "-" .. realm, victim = victim.name .. "-" .. realm,
             victimClass = victim.class, victimRace = victim.race, victimLevel = victim.level,
             zone = pick(ZONES), time = now - dRand(432000),
-            isKOS = false, isBounty = false, points = 5, killType = "random",
+            isKOS = false, points = 10, killType = "random",
             _demo = true,
         }
     end
@@ -235,14 +198,6 @@ function DemoData:GetMergedKOS()
     local merged = {}
     for k, v in pairs(self:Get().kosList) do merged[k] = v end
     for k, v in pairs(Deadpool.db.kosList) do merged[k] = v end  -- real overwrites demo
-    return merged
-end
-
-function DemoData:GetMergedBounties()
-    if not self:IsEnabled() then return Deadpool.db.bounties end
-    local merged = {}
-    for k, v in pairs(self:Get().bounties) do merged[k] = v end
-    for k, v in pairs(Deadpool.db.bounties) do merged[k] = v end
     return merged
 end
 

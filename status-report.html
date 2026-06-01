@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deadpool Addon — Status Report</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0d0d0d; color: #e0e0e0; line-height: 1.6; }
+  .container { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+  h1 { color: #cc0000; font-size: 2rem; margin-bottom: 4px; letter-spacing: -0.5px; }
+  .subtitle { color: #888; font-size: 0.9rem; margin-bottom: 32px; }
+  .version-badge { display: inline-block; background: #1a1a1a; border: 1px solid #cc0000; color: #cc0000; padding: 2px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: 600; margin-left: 12px; vertical-align: middle; }
+
+  /* Cards grid */
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .stat-card { background: #141414; border: 1px solid #222; border-radius: 8px; padding: 16px; text-align: center; }
+  .stat-card .value { font-size: 1.8rem; font-weight: 700; color: #cc0000; }
+  .stat-card .label { font-size: 0.75rem; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-top: 4px; }
+
+  /* Sections */
+  .section { margin-bottom: 28px; }
+  .section-title { font-size: 1.1rem; color: #cc0000; border-bottom: 1px solid #222; padding-bottom: 6px; margin-bottom: 14px; font-weight: 600; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { text-align: left; color: #888; font-weight: 600; padding: 8px 10px; border-bottom: 2px solid #222; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.5px; }
+  td { padding: 7px 10px; border-bottom: 1px solid #1a1a1a; }
+  tr:hover td { background: #1a1a1a; }
+  .file-name { color: #69ccf0; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.82rem; }
+  .num { text-align: right; font-family: 'Cascadia Code', monospace; color: #aaa; }
+
+  /* Status indicators */
+  .status { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .status-ok { background: #0a2a0a; color: #4caf50; border: 1px solid #1b5e20; }
+  .status-warn { background: #2a2000; color: #ff9800; border: 1px solid #e65100; }
+  .status-info { background: #001a2a; color: #29b6f6; border: 1px solid #01579b; }
+  .status-done { background: #1a1a1a; color: #666; border: 1px solid #333; }
+  .status-new { background: #1a0028; color: #ce93d8; border: 1px solid #4a148c; }
+
+  /* Module cards */
+  .modules-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+  .module-card { background: #141414; border: 1px solid #222; border-radius: 8px; padding: 16px 18px; }
+  .module-card h3 { color: #e0e0e0; font-size: 0.95rem; margin-bottom: 6px; }
+  .module-card .desc { color: #777; font-size: 0.8rem; margin-bottom: 10px; }
+  .module-card .detail { font-size: 0.78rem; color: #555; }
+  .module-card .detail span { color: #aaa; }
+
+  /* Improvements list */
+  .improve-list { list-style: none; }
+  .improve-list li { padding: 10px 14px; border-left: 3px solid #333; margin-bottom: 8px; background: #141414; border-radius: 0 6px 6px 0; }
+  .improve-list li.priority-high { border-left-color: #ff5722; }
+  .improve-list li.priority-med { border-left-color: #ff9800; }
+  .improve-list li.priority-low { border-left-color: #29b6f6; }
+  .improve-list li.priority-idea { border-left-color: #ce93d8; }
+  .improve-title { font-weight: 600; color: #e0e0e0; font-size: 0.88rem; }
+  .improve-desc { color: #888; font-size: 0.8rem; margin-top: 3px; }
+  .priority-tag { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.5px; margin-left: 8px; }
+
+  /* Footer */
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #1a1a1a; color: #444; font-size: 0.75rem; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Deadpool <span class="version-badge">v1.6.2</span></h1>
+<p class="subtitle">Plugin Status Report — Generated May 31, 2026 &bull; TBC Anniversary (Interface 20505)</p>
+
+<!-- Stats Overview -->
+<div class="stats-grid">
+  <div class="stat-card"><div class="value">14</div><div class="label">Source Files</div></div>
+  <div class="stat-card"><div class="value">8,714</div><div class="label">Lines of Code</div></div>
+  <div class="stat-card"><div class="value">374 KB</div><div class="label">Total Size</div></div>
+  <div class="stat-card"><div class="value">10</div><div class="label">Modules</div></div>
+  <div class="stat-card"><div class="value">9</div><div class="label">UI Tabs</div></div>
+  <div class="stat-card"><div class="value">7</div><div class="label">Sync Msg Types</div></div>
+</div>
+
+<!-- File Breakdown -->
+<div class="section">
+  <div class="section-title">File Breakdown</div>
+  <table>
+    <thead><tr><th>File</th><th>Purpose</th><th style="text-align:right">Lines</th><th style="text-align:right">Size</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td class="file-name">Core.lua</td><td>Event system, utilities, slash commands, init</td><td class="num">848</td><td class="num">36.4 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">Data.lua</td><td>SavedVariables, defaults, data access helpers</td><td class="num">450</td><td class="num">18.4 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">UI.lua</td><td>Main UI frame, tabs, rendering, settings</td><td class="num">3,111</td><td class="num">153.7 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">Sync.lua</td><td>Guild addon channel protocol, message queue</td><td class="num">771</td><td class="num">32.7 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">Nearby.lua</td><td>Nearby enemy widget, stealth alerts, direction arrow</td><td class="num">892</td><td class="num">41.2 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">KillTracker.lua</td><td>Combat log kill detection, death tracking, KOS alerts</td><td class="num">514</td><td class="num">25.7 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">BountyManager.lua</td><td>KOS list management, point calculations, kill recording</td><td class="num">326</td><td class="num">13.9 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">Achievements.lua</td><td>50+ PvP achievements with backup/restore</td><td class="num">623</td><td class="num">33.7 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">Quests.lua</td><td>Daily/weekly PvP quests</td><td class="num">364</td><td class="num">16.4 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">Alerts.lua</td><td>Visual alert frame for KOS sightings &amp; kills</td><td class="num">220</td><td class="num">8.8 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">Theme.lua</td><td>Theming engine (Deadpool, Blood, Shadow, ElvUI)</td><td class="num">309</td><td class="num">12.9 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">DemoData.lua</td><td>Sample data for testing/preview</td><td class="num">248</td><td class="num">11.3 KB</td><td><span class="status status-warn">Legacy refs</span></td></tr>
+      <tr><td class="file-name">Nearby.xml</td><td>SecureActionButton template for click-to-target</td><td class="num">17</td><td class="num">0.7 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+      <tr><td class="file-name">Deadpool.toc</td><td>Addon manifest</td><td class="num">21</td><td class="num">0.5 KB</td><td><span class="status status-ok">Clean</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Module Status -->
+<div class="section">
+  <div class="section-title">Module Status</div>
+  <div class="modules-grid">
+    <div class="module-card">
+      <h3>Core <span class="status status-ok">OK</span></h3>
+      <div class="desc">Event system, utilities, slash commands, guild identity, init pipeline</div>
+      <div class="detail">Points: <span>Hardcoded (10/kill, 25/KOS)</span> &bull; GM Config: <span>Removed point editing</span></div>
+    </div>
+    <div class="module-card">
+      <h3>Sync <span class="status status-ok">OK</span></h3>
+      <div class="desc">Guild addon channel protocol with message queue (1 msg/sec pacing)</div>
+      <div class="detail">Messages: <span>K, A, R, Q, E, V, H, P, S, G, BK, BS, AS</span> &bull; Queue: <span>Rate-limited</span></div>
+    </div>
+    <div class="module-card">
+      <h3>Nearby <span class="status status-ok">OK</span></h3>
+      <div class="desc">Enemy proximity widget with click-to-target, stealth alerts, direction arrow</div>
+      <div class="detail">Throttle: <span>1s/player CLEU, GUID cache 5m TTL</span> &bull; BG: <span>Disabled</span> &bull; Sanctuary: <span>Disabled</span></div>
+    </div>
+    <div class="module-card">
+      <h3>KillTracker <span class="status status-ok">OK</span></h3>
+      <div class="desc">Combat log kill detection, death attribution, auto-KOS, assist tracking</div>
+      <div class="detail">BG/Arena: <span>Skip all tracking</span> &bull; Assist: <span>75% base pts</span></div>
+    </div>
+    <div class="module-card">
+      <h3>BountyManager <span class="status status-ok">OK</span></h3>
+      <div class="desc">KOS list management, point calculations, kill recording &amp; broadcasting</div>
+      <div class="detail">Bounties: <span class="status status-done">Removed</span> &bull; Points: <span>Fixed (no GM config)</span></div>
+    </div>
+    <div class="module-card">
+      <h3>Achievements <span class="status status-ok">OK</span></h3>
+      <div class="desc">50+ PvP achievements across 10 categories, account-wide with backup/restore</div>
+      <div class="detail">Pts: <span>Separate from leaderboard</span> &bull; Sync: <span>Score only (AS message)</span></div>
+    </div>
+    <div class="module-card">
+      <h3>Quests <span class="status status-ok">OK</span></h3>
+      <div class="desc">3 daily + 1 weekly randomly generated PvP quests</div>
+      <div class="detail">Types: <span>CLASS_KILL, ZONE_KILL, KOS_KILL, TOTAL_KILL, STREAK, etc.</span></div>
+    </div>
+    <div class="module-card">
+      <h3>Arena Tracker <span class="status status-new">Scaffolded</span></h3>
+      <div class="desc">Arena match history — wins/losses, brackets, rating, teammates</div>
+      <div class="detail">Storage: <span>arenaLog[]</span> &bull; Sync: <span>Local only</span> &bull; Detection: <span>Not wired</span></div>
+    </div>
+    <div class="module-card">
+      <h3>UI <span class="status status-ok">OK</span></h3>
+      <div class="desc">Main frame with 9 tabs, dashboard, settings, minimap button</div>
+      <div class="detail">Tabs: <span>Dashboard, KOS, Arena, Enemies, Leaderboard, Quests, Achievements, My Stats, Kill Log, Settings</span></div>
+    </div>
+    <div class="module-card">
+      <h3>Theme <span class="status status-ok">OK</span></h3>
+      <div class="desc">4 themes (Deadpool, Blood, Shadow, Frost) + ElvUI auto-detection</div>
+      <div class="detail">Persistence: <span>settings.theme</span> &bull; Accent: <span>Per-theme color</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Sync Protocol -->
+<div class="section">
+  <div class="section-title">Sync Protocol</div>
+  <table>
+    <thead><tr><th>Code</th><th>Name</th><th>Direction</th><th>Description</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td class="file-name">K</td><td>KILL</td><td>Broadcast</td><td>Kill report (killer, victim, class, race, level, zone)</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">A</td><td>KOS_ADD</td><td>Broadcast</td><td>Add target to guild KOS list</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">R</td><td>KOS_REM</td><td>Broadcast</td><td>Remove target from guild KOS list</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">S</td><td>SIGHTING</td><td>Broadcast</td><td>KOS target spotted alert</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">G</td><td>GM_CONFIG</td><td>Broadcast</td><td>Guild config (managers, wars, reset timestamps)</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">Q/E</td><td>SYNC_REQ/END</td><td>Request</td><td>Full sync request → bulk KOS + scores + config</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">BK</td><td>BULK_KOS</td><td>Response</td><td>Packed KOS entries (multi-record per message)</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">BS</td><td>BULK_SCR</td><td>Response</td><td>Packed scoreboard (top 30, 24h reset guard)</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">AS</td><td>ACH_SCORE</td><td>Broadcast</td><td>Achievement total points (login broadcast)</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">H</td><td>HEARTBEAT</td><td>Periodic</td><td>Sync version (every 5 min)</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">V</td><td>VERSION</td><td>Login</td><td>Addon version check</td><td><span class="status status-ok">OK</span></td></tr>
+      <tr><td class="file-name">P</td><td>PUSH</td><td>Event</td><td>Push offer when guild member comes online</td><td><span class="status status-ok">OK</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Data Architecture -->
+<div class="section">
+  <div class="section-title">Data Architecture</div>
+  <table>
+    <thead><tr><th>Table</th><th>Storage</th><th>Sync</th><th>Description</th></tr></thead>
+    <tbody>
+      <tr><td class="file-name">kosList</td><td>Account-wide</td><td>Guild (BK)</td><td>Kill on Sight targets with class, level, kill counts, sighting data</td></tr>
+      <tr><td class="file-name">killLog</td><td>Account-wide</td><td>Guild (K)</td><td>Last 500 kills (newest first) with points, killType, zone</td></tr>
+      <tr><td class="file-name">deathLog</td><td>Account-wide</td><td>Local</td><td>Last 500 deaths with killer attribution</td></tr>
+      <tr><td class="file-name">enemySheet</td><td>Account-wide</td><td>Local</td><td>Per-enemy aggregated data (kills us, we killed them, class, level)</td></tr>
+      <tr><td class="file-name">scoreboard</td><td>Account-wide</td><td>Guild (BS)</td><td>Guild member scores (totalKills, kosKills, totalPoints, streaks)</td></tr>
+      <tr><td class="file-name">arenaLog</td><td>Account-wide</td><td>Local</td><td>Arena match history (bracket, rating, team, opponents, result)</td></tr>
+      <tr><td class="file-name">achievements</td><td>Account-wide</td><td>Score only (AS)</td><td>Earned achievements, counters, sets — with backup/restore</td></tr>
+      <tr><td class="file-name">guildConfig</td><td>Account-wide</td><td>Guild (G)</td><td>Managers, war guilds, reset timestamps</td></tr>
+      <tr><td class="file-name">settings</td><td>Account-wide</td><td>Local</td><td>User preferences (sounds, alerts, theme, sync toggle)</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Recent Changes -->
+<div class="section">
+  <div class="section-title">Recent Changes (May 2026)</div>
+  <table>
+    <thead><tr><th>Change</th><th>Impact</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Bounty system removed entirely</td><td>~400 lines removed across 10 files. Kill types: "kos" or "random" only.</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>Points hardcoded (no GM config)</td><td>10/kill, 25/KOS, underdog/lowbie modifiers locked. Settings UI stripped.</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>Achievement points decoupled from leaderboard</td><td>Award() no longer adds pts to score.totalPoints. Tracked separately.</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>Achievement score sync added</td><td>Broadcasts total achievement points to guild on login (AS message).</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>Arena Tracker tab scaffolded</td><td>UI tab, data structure, rendering in place. Event detection not wired.</td><td><span class="status status-new">Scaffold</span></td></tr>
+      <tr><td>Account-wide DB migration</td><td>DeadpoolDB (account) is primary. Per-char data merges once on login.</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>Roster cleanup race condition fixed</td><td>Waits for GUILD_ROSTER_UPDATE instead of 10s timer. Prevents scoreboard wipe.</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>CLEU throttling + GUID cache</td><td>1 TrackPlayer call/player/sec. GetPlayerInfoByGUID cached 5min. 3s nameplate ticker removed.</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>Sanctuary + BG skip for Nearby</td><td>Stealth alerts, aggression tracking disabled in sanctuary zones and BG/arena.</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>Minimize button fix</td><td>Rows explicitly hidden on minimize. UpdateWidget bails when minimized.</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>Sync protocol GM_CONFIG simplified</td><td>7 fields (was 13). Point config removed. Reset timestamps preserved.</td><td><span class="status status-ok">Complete</span></td></tr>
+      <tr><td>Dead sync handlers removed</td><td>HandleSyncBounty, HandleSyncScore, HandleSyncKill, HandleSyncKOS removed.</td><td><span class="status status-ok">Complete</span></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Improvements -->
+<div class="section">
+  <div class="section-title">Recommended Improvements</div>
+  <ul class="improve-list">
+    <li class="priority-high">
+      <div class="improve-title">Wire Arena Match Detection <span class="priority-tag" style="color:#ff5722">HIGH</span></div>
+      <div class="improve-desc">The Arena tab UI and data structure are ready, but no events are hooked to detect arena matches. Need to register for UPDATE_BATTLEFIELD_SCORE / ARENA_OPPONENT_UPDATE events and populate arenaLog entries with bracket, rating changes, teammate names, and opponent names.</div>
+    </li>
+    <li class="priority-med">
+      <div class="improve-title">Achievement Top 3 Display <span class="priority-tag" style="color:#ff9800">MEDIUM</span></div>
+      <div class="improve-desc">The achievement score sync (AS message) is broadcasting scores, but the Achievements tab doesn't yet show guild top 3 earners. The data is available via Deadpool:GetGuildAchScores() — needs a small UI addition at the top of the achievements panel.</div>
+    </li>
+    <li class="priority-med">
+      <div class="improve-title">Clean DemoData.lua Bounty References <span class="priority-tag" style="color:#ff9800">MEDIUM</span></div>
+      <div class="improve-desc">DemoData.lua still generates bounty demo data (bounties table, bountyKills in scoreboard, isBounty in kill log). Not causing errors since demo mode checks are safe, but creates inconsistent sample data when demo mode is enabled.</div>
+    </li>
+    <li class="priority-med">
+      <div class="improve-title">Rename BountyManager.lua <span class="priority-tag" style="color:#ff9800">MEDIUM</span></div>
+      <div class="improve-desc">File still called "BountyManager" but now only handles KOS management and point calculations. Consider renaming to KOSManager.lua or PointsManager.lua and updating the .toc file to match.</div>
+    </li>
+    <li class="priority-low">
+      <div class="improve-title">Version Bump to 1.7.0 <span class="priority-tag" style="color:#29b6f6">LOW</span></div>
+      <div class="improve-desc">Major changes (bounty removal, point lock-in, arena tab, account-wide DB) warrant a new minor version. Currently still showing 1.6.2.</div>
+    </li>
+    <li class="priority-low">
+      <div class="improve-title">Scoreboard Column Shift <span class="priority-tag" style="color:#29b6f6">LOW</span></div>
+      <div class="improve-desc">Removing the "Bounty" column from the scoreboard shifted columns. The Streak, Assists, and Ach Pts columns still reference old SetCol indices (7, 8 for data that was at 8, 9). Verify rendering is correct in-game.</div>
+    </li>
+    <li class="priority-idea">
+      <div class="improve-title">Arena Rating History Graph <span class="priority-tag" style="color:#ce93d8">IDEA</span></div>
+      <div class="improve-desc">Once arena tracking is wired, could show a simple rating-over-time trend using text-based sparklines or a frame-drawn chart on the dashboard.</div>
+    </li>
+    <li class="priority-idea">
+      <div class="improve-title">Kill Heatmap by Zone <span class="priority-tag" style="color:#ce93d8">IDEA</span></div>
+      <div class="improve-desc">Show which zones have the most PvP activity on the dashboard. Data is already tracked in achievements (zones_killed_in set). Could display top 5 zones with kill counts.</div>
+    </li>
+    <li class="priority-idea">
+      <div class="improve-title">Nemesis System <span class="priority-tag" style="color:#ce93d8">IDEA</span></div>
+      <div class="improve-desc">Auto-detect rivalry with specific enemy players (mutual kills). Show "Nemesis" badge on nearby widget and KOS list. Data already exists in enemySheet (timesKilledUs, timesWeKilledThem).</div>
+    </li>
+  </ul>
+</div>
+
+<!-- Audit Results -->
+<div class="section">
+  <div class="section-title">Audit Results</div>
+  <table>
+    <thead><tr><th>Check</th><th>Result</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>Dead function references</td><td><span class="status status-ok">Pass</span></td><td>No calls to removed functions (HasActiveBounty, GetBounty, PlaceBounty, etc.)</td></tr>
+      <tr><td>Sync protocol consistency</td><td><span class="status status-ok">Pass</span></td><td>BroadcastGMConfig, HandleGMConfig, HandleSyncRequest all use same 7-field format</td></tr>
+      <tr><td>MSG table vs dispatcher</td><td><span class="status status-ok">Pass</span></td><td>All MSG types in dispatcher exist in MSG table. Dead handlers removed.</td></tr>
+      <tr><td>Data defaults vs usage</td><td><span class="status status-ok">Pass</span></td><td>DEFAULTS match expected structures. arenaLog initialized.</td></tr>
+      <tr><td>Tab system consistency</td><td><span class="status status-ok">Pass</span></td><td>All 10 tabs have render functions or panel dispatchers</td></tr>
+      <tr><td>Achievement decoupling</td><td><span class="status status-ok">Pass</span></td><td>Award() does not modify score.totalPoints</td></tr>
+      <tr><td>Bounty references (code)</td><td><span class="status status-ok">Pass</span></td><td>No runtime bounty references remain. Only comments and DemoData generation.</td></tr>
+      <tr><td>BG/Arena suppression</td><td><span class="status status-ok">Pass</span></td><td>Nearby CLEU, KillTracker both skip in BG/Arena</td></tr>
+      <tr><td>Sanctuary suppression</td><td><span class="status status-ok">Pass</span></td><td>Nearby CLEU skips in sanctuary zones</td></tr>
+      <tr><td>DemoData legacy</td><td><span class="status status-warn">Warn</span></td><td>Still generates bounty demo data. Harmless but inconsistent.</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="footer">
+  Deadpool &bull; Kill on Sight Bounty Tracker &amp; World PvP Scoreboard &bull; TBC Anniversary &bull; CurseForge Project 1493261
+</div>
+
+</div>
+</body>
+</html>

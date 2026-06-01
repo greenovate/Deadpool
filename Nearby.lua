@@ -11,6 +11,10 @@ Deadpool:RegisterModule("Nearby", Nearby)
 -- Tracked players: [fullName] = { name, realm, class, race, level, guild, lastSeen, isStealth, guid, zone }
 local tracked = {}
 
+-- CLEU throttle: limit TrackPlayer calls to once per player per second
+local cleuThrottle = {}  -- [fullName] = GetTime()
+local CLEU_THROTTLE_SEC = 1
+
 -- Constants
 local EXPIRE_NORMAL = 60      -- seconds to keep a player on list after last seen
 local EXPIRE_STEALTH = 300    -- 5 minutes for stealth detection
@@ -87,6 +91,7 @@ end
 -- Detection: Scan a unit (nameplate, target, mouseover)
 ----------------------------------------------------------------------
 function Nearby:ScanUnit(unitId)
+    if Deadpool:IsInSanctuary() then return end
     if not unitId or not UnitExists(unitId) then return end
     if not UnitIsPlayer(unitId) then return end
     if not UnitIsEnemy("player", unitId) then return end
@@ -139,6 +144,11 @@ end
 -- Detection: Combat log events (hostile players in ~50yd range)
 ----------------------------------------------------------------------
 function Nearby:OnCombatLogEvent()
+    -- Skip all hostile tracking in sanctuary zones (Shattrath, etc.)
+    if Deadpool:IsInSanctuary() then return end
+    -- Skip in battlegrounds/arenas (too much noise)
+    if Deadpool.modules.KillTracker and Deadpool.modules.KillTracker:IsInBGOrArena() then return end
+
     local _, subevent, _, sourceGUID, sourceName, sourceFlags, _,
           destGUID, destName, destFlags = CombatLogGetCurrentEventInfo()
 
@@ -148,8 +158,7 @@ function Nearby:OnCombatLogEvent()
     -- Check source: hostile player
     if sourceGUID and sourceName and sourceFlags then
         if sourceGUID:sub(1, 6) == "Player" and bit.band(sourceFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
-            local class, race = Deadpool.modules.KillTracker:GetInfoFromGUID(sourceGUID)
-            -- Detect stealth abilities
+            -- Detect stealth abilities (always check, no throttle)
             local isStealth = false
             if subevent and (subevent == "SPELL_AURA_APPLIED" or subevent == "SPELL_CAST_SUCCESS") then
                 local _, spellName = select(12, CombatLogGetCurrentEventInfo())
@@ -158,17 +167,27 @@ function Nearby:OnCombatLogEvent()
                     isStealth = true
                 end
             end
-            self:TrackPlayer(sourceName, sourceGUID, class, race, nil, nil, isStealth)
+            -- Throttle TrackPlayer + GetInfoFromGUID to once per player per second
+            local srcFull = Deadpool:NormalizeName(sourceName)
+            local gt = GetTime()
+            local class, race
+            if isStealth or not srcFull or not cleuThrottle[srcFull] or (gt - cleuThrottle[srcFull]) >= CLEU_THROTTLE_SEC then
+                if srcFull then cleuThrottle[srcFull] = gt end
+                class, race = Deadpool.modules.KillTracker:GetInfoFromGUID(sourceGUID)
+                self:TrackPlayer(sourceName, sourceGUID, class, race, nil, nil, isStealth)
+            end
 
-            -- Stealth alert: enemy player entered stealth nearby
+            -- Stealth alert (own 30s cooldown, never throttled)
             if isStealth then
-                local fullName = Deadpool:NormalizeName(sourceName)
-                if fullName then
+                if srcFull then
                     local now = time()
-                    if not alertCooldowns["stealth_" .. fullName] or (now - alertCooldowns["stealth_" .. fullName]) >= 30 then
-                        alertCooldowns["stealth_" .. fullName] = now
-                        local display = class and Deadpool:ClassColor(class, Deadpool:ShortName(fullName))
-                            or Deadpool:ShortName(fullName)
+                    if not alertCooldowns["stealth_" .. srcFull] or (now - alertCooldowns["stealth_" .. srcFull]) >= 30 then
+                        alertCooldowns["stealth_" .. srcFull] = now
+                        if not class then
+                            class, race = Deadpool.modules.KillTracker:GetInfoFromGUID(sourceGUID)
+                        end
+                        local display = class and Deadpool:ClassColor(class, Deadpool:ShortName(srcFull))
+                            or Deadpool:ShortName(srcFull)
                         Deadpool:Print("|cFFFF66FFSTEALTH DETECTED!|r " .. display .. " |cFFFF66FFjust stealthed nearby!|r")
                         if Deadpool.db.settings.alertSound then
                             Deadpool:PlayKOSAlertSound()
@@ -177,28 +196,29 @@ function Nearby:OnCombatLogEvent()
                 end
             end
 
-            -- Aggression detection: hostile player damaging a friendly player
+            -- Aggression detection (own ALERT_COOLDOWN, not throttled)
             if isDamage and destGUID and destGUID:sub(1, 6) == "Player" and destFlags then
                 local destIsFriendly = bit.band(destFlags, COMBATLOG_OBJECT_REACTION_FRIENDLY) > 0
                 if destIsFriendly then
-                    local fullName = Deadpool:NormalizeName(sourceName)
-                    if fullName and tracked[fullName] then
-                        tracked[fullName].isAggressive = true
-                        tracked[fullName].aggressiveTime = time()
-                        tracked[fullName].lastVictim = destName
+                    if srcFull and tracked[srcFull] then
+                        tracked[srcFull].isAggressive = true
+                        tracked[srcFull].aggressiveTime = time()
+                        tracked[srcFull].lastVictim = destName
                     end
 
-                    -- Alert if the victim is party/raid/guild member
                     local isPartyRaid = bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_PARTY) > 0
                         or bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_RAID) > 0
                     local isMe = bit.band(destFlags, COMBATLOG_OBJECT_AFFILIATION_MINE) > 0
 
-                    if (isPartyRaid or isMe) and fullName then
+                    if (isPartyRaid or isMe) and srcFull then
                         local now = time()
-                        if not alertCooldowns[fullName] or (now - alertCooldowns[fullName]) >= ALERT_COOLDOWN then
-                            alertCooldowns[fullName] = now
-                            local attackerDisplay = class and Deadpool:ClassColor(class, Deadpool:ShortName(fullName))
-                                or Deadpool:ShortName(fullName)
+                        if not alertCooldowns[srcFull] or (now - alertCooldowns[srcFull]) >= ALERT_COOLDOWN then
+                            alertCooldowns[srcFull] = now
+                            if not class then
+                                class, race = Deadpool.modules.KillTracker:GetInfoFromGUID(sourceGUID)
+                            end
+                            local attackerDisplay = class and Deadpool:ClassColor(class, Deadpool:ShortName(srcFull))
+                                or Deadpool:ShortName(srcFull)
                             if isMe and destName == UnitName("player") then
                                 Deadpool:Print(Deadpool.colors.red .. "UNDER ATTACK!|r " ..
                                     attackerDisplay .. " is attacking you!")
@@ -207,7 +227,6 @@ function Nearby:OnCombatLogEvent()
                                     attackerDisplay .. " is attacking " ..
                                     Deadpool.colors.cyan .. (destName or "?") .. "|r!")
                             end
-                            -- Play alert sound
                             if Deadpool.db.settings.alertSound then
                                 Deadpool:PlayPartyAttackSound()
                             end
@@ -218,11 +237,16 @@ function Nearby:OnCombatLogEvent()
         end
     end
 
-    -- Check dest: hostile player
+    -- Check dest: hostile player (throttled)
     if destGUID and destName and destFlags then
         if destGUID:sub(1, 6) == "Player" and bit.band(destFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
-            local class, race = Deadpool.modules.KillTracker:GetInfoFromGUID(destGUID)
-            self:TrackPlayer(destName, destGUID, class, race, nil, nil, false)
+            local destFull = Deadpool:NormalizeName(destName)
+            local now = GetTime()
+            if not destFull or not cleuThrottle[destFull] or (now - cleuThrottle[destFull]) >= CLEU_THROTTLE_SEC then
+                if destFull then cleuThrottle[destFull] = now end
+                local class, race = Deadpool.modules.KillTracker:GetInfoFromGUID(destGUID)
+                self:TrackPlayer(destName, destGUID, class, race, nil, nil, false)
+            end
         end
     end
 end
@@ -354,11 +378,15 @@ function Nearby:BuildWidget()
         isMinimized = not isMinimized
         if isMinimized then
             contentFrame:Hide()
+            -- Hide all rows (parented to widget, not contentFrame)
+            for i = 1, MAX_ROWS do
+                if rows[i] then rows[i]:Hide() end
+            end
             widget:SetHeight(22)
             minText:SetText("+")
         else
             contentFrame:Show()
-            self:UpdateWidget()
+            Nearby:UpdateWidget()
             minText:SetText("-")
         end
     end)
@@ -514,11 +542,6 @@ function Nearby:ShowContextMenu(row)
         end })
     end
 
-    table.insert(menuList, { text = "Place Bounty", notCheckable = true, func = function()
-        local d = StaticPopup_Show("DEADPOOL_PLACE_BOUNTY", Deadpool:ShortName(fullName))
-        if d then d.data = fullName end
-    end })
-
     table.insert(menuList, { text = "Cancel", notCheckable = true })
 
     UIDropDownMenu_Initialize(widget._ctxMenu, function(self, level)
@@ -568,6 +591,19 @@ function Nearby:UpdateWidget()
     if not widget or isMinimized then return end
     -- Skip frame resizing during combat (protected function restriction)
     if InCombatLockdown() then return end
+    -- In sanctuary: clear tracked list and hide all rows
+    if Deadpool:IsInSanctuary() then
+        if next(tracked) then
+            wipe(tracked)
+            for i = 1, MAX_ROWS do
+                if rows[i] then rows[i]:Hide() end
+            end
+            contentFrame:SetHeight(1)
+            widget:SetHeight(22)
+            countText:SetText(Deadpool.colors.grey .. "0|r")
+        end
+        return
+    end
 
     local TM = Deadpool.modules.Theme
     local t = TM.active
@@ -622,6 +658,9 @@ function Nearby:UpdateWidget()
     -- Clamp scroll offset
     local maxOffset = math.max(0, count - MAX_ROWS)
     if scrollOffset > maxOffset then scrollOffset = maxOffset end
+
+    -- Skip row/size updates when minimized
+    if isMinimized then return end
 
     -- Resize content to visible rows (not total)
     local visibleCount = math.min(count - scrollOffset, MAX_ROWS)
@@ -691,13 +730,20 @@ function Nearby:UpdateWidget()
                 row._classDot:SetColorTexture(0.5, 0.5, 0.5, rowAlpha)
             end
 
-            -- Name (class-colored)
+            -- Name (class-colored) + nemesis badge
             local shortName = d.name or Deadpool:ShortName(d.fullName)
+            local nameStr
             if d.class then
-                row._nameText:SetText(Deadpool:ClassColor(d.class, shortName))
+                nameStr = Deadpool:ClassColor(d.class, shortName)
             else
-                row._nameText:SetText(shortName)
+                nameStr = shortName
             end
+            -- Nemesis badge: mutual kills with this enemy
+            local enemy = Deadpool.db.enemySheet and Deadpool.db.enemySheet[d.fullName]
+            if enemy and (enemy.timesKilledUs or 0) > 0 and (enemy.timesWeKilledThem or 0) > 0 then
+                nameStr = nameStr .. Deadpool.colors.red .. " N|r"
+            end
+            row._nameText:SetText(nameStr)
             row._nameText:SetAlpha(rowAlpha)
 
             -- Level + distance display
@@ -957,10 +1003,7 @@ function Nearby:Init()
         end)
     end
 
-    -- Periodic nameplate re-scan every 3 seconds
-    if C_Timer and C_Timer.NewTicker then
-        C_Timer.NewTicker(3, function()
-            Nearby:ScanAllNameplates()
-        end)
-    end
+    -- Nameplate re-scan removed: NAME_PLATE_UNIT_ADDED event + UpdateWidget
+    -- distance refresh every 1s already cover all nameplates. The 3-second
+    -- ScanAllNameplates ticker was redundant and doubled API call volume.
 end

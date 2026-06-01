@@ -17,7 +17,7 @@ local TAB_HEIGHT = 28
 local TABS = {
     { key = "dashboard",     label = "Dashboard" },
     { key = "kos",           label = "Kill on Sight" },
-    { key = "bounties",      label = "Bounties" },
+    { key = "arena",         label = "Arena" },
     { key = "enemies",       label = "Enemies" },
     { key = "scoreboard",    label = "Leaderboard" },
     { key = "quests",        label = "Quests" },
@@ -132,20 +132,6 @@ function UI:HookUnitMenus()
                 local fullName = Deadpool:GetUnitFullName(capturedUnit)
                 if fullName then
                     Deadpool:AddToKOS(fullName, "")
-                end
-            end
-            UIDropDownMenu_AddButton(info)
-
-            -- Place Bounty
-            info = UIDropDownMenu_CreateInfo()
-            info.text = "Place Bounty"
-            info.notCheckable = true
-            info.colorCode = "|cFFFFD700"
-            info.func = function()
-                local fullName = Deadpool:GetUnitFullName(capturedUnit)
-                if fullName then
-                    local dialog = StaticPopup_Show("DEADPOOL_PLACE_BOUNTY", Deadpool:ShortName(fullName))
-                    if dialog then dialog.data = fullName end
                 end
             end
             UIDropDownMenu_AddButton(info)
@@ -325,90 +311,6 @@ function UI:CreateMainFrame()
         timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
     }
 
-    StaticPopupDialogs["DEADPOOL_PLACE_BOUNTY"] = {
-        text = "Place bounty on %s\nEnter amount (gold or points):",
-        button1 = "Gold Bounty", button2 = "Cancel", button3 = "Points Bounty",
-        hasEditBox = true, maxLetters = 10,
-        OnShow = function(self) self:SetFrameStrata("TOOLTIP") end,
-        OnAccept = function(self)
-            local eb = self.editBox or self.EditBox
-            local val = tonumber(eb and eb:GetText())
-            local target = self.data
-            if val and val > 0 and target then Deadpool:PlaceBounty(target, val, 10, "gold") end
-        end,
-        OnAlt = function(self)
-            local eb = self.editBox or self.EditBox
-            local val = tonumber(eb and eb:GetText())
-            local target = self.data
-            if val and val > 0 and target then Deadpool:PlaceBounty(target, val, 10, "points") end
-        end,
-        EditBoxOnEnterPressed = function(self)
-            local parent = self:GetParent()
-            local eb = parent.editBox or parent.EditBox
-            local val = tonumber(eb and eb:GetText())
-            local data = parent.data
-            if val and val > 0 and data then Deadpool:PlaceBounty(data, val, 10, "gold") end
-            parent:Hide()
-        end,
-        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-    }
-
-    StaticPopupDialogs["DEADPOOL_CONTRIBUTE_BOUNTY"] = {
-        text = "Contribute to bounty on %s\nEnter amount:",
-        button1 = "Add Gold", button2 = "Cancel", button3 = "Add Points",
-        hasEditBox = true, maxLetters = 10,
-        OnShow = function(self) self:SetFrameStrata("TOOLTIP") end,
-        OnAccept = function(self)
-            local eb = self.editBox or self.EditBox
-            local val = tonumber(eb and eb:GetText())
-            local target = self.data
-            if val and val > 0 and target then Deadpool:ContributeToBounty(target, val, "gold") end
-        end,
-        OnAlt = function(self)
-            local eb = self.editBox or self.EditBox
-            local val = tonumber(eb and eb:GetText())
-            local target = self.data
-            if val and val > 0 and target then Deadpool:ContributeToBounty(target, val, "points") end
-        end,
-        EditBoxOnEnterPressed = function(self)
-            local parent = self:GetParent()
-            local eb = parent.editBox or parent.EditBox
-            local val = tonumber(eb and eb:GetText())
-            local data = parent.data
-            if val and val > 0 and data then Deadpool:ContributeToBounty(data, val, "gold") end
-            parent:Hide()
-        end,
-        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-    }
-
-    StaticPopupDialogs["DEADPOOL_EDIT_BOUNTY_KILLS"] = {
-        text = "Edit max kills for bounty on %s\nEnter new kill target:",
-        button1 = "Save", button2 = "Cancel",
-        hasEditBox = true, maxLetters = 6,
-        OnShow = function(self)
-            self:SetFrameStrata("TOOLTIP")
-            local target = self.data
-            local bounty = target and Deadpool.db.bounties[target]
-            local eb = self.editBox or self.EditBox
-            if bounty and eb then eb:SetText(tostring(bounty.maxKills or 10)) end
-        end,
-        OnAccept = function(self)
-            local eb = self.editBox or self.EditBox
-            local val = tonumber(eb and eb:GetText())
-            local target = self.data
-            if val and val >= 1 and target then Deadpool:EditBountyKills(target, val) end
-        end,
-        EditBoxOnEnterPressed = function(self)
-            local parent = self:GetParent()
-            local eb = parent.editBox or parent.EditBox
-            local val = tonumber(eb and eb:GetText())
-            local data = parent.data
-            if val and val >= 1 and data then Deadpool:EditBountyKills(data, val) end
-            parent:Hide()
-        end,
-        timeout = 0, whileDead = true, hideOnEscape = true, preferredIndex = 3,
-    }
-
     StaticPopupDialogs["DEADPOOL_WIPE_SCOREBOARD"] = {
         text = "RESET SCOREBOARD?\n\nThis will wipe all guild member scores and points.\nThis resets for ALL guild members with the addon.\nThis cannot be undone.",
         button1 = "Reset", button2 = "Cancel",
@@ -441,7 +343,7 @@ function UI:CreateMainFrame()
     }
 
     StaticPopupDialogs["DEADPOOL_PURGE_KOS"] = {
-        text = "PURGE KOS LIST?\n\nThis will remove all KOS entries for ALL guild members.\nEntries with active bounties will be preserved.\nThis cannot be undone.",
+        text = "PURGE KOS LIST?\n\nThis will remove all KOS entries for ALL guild members.\nThis cannot be undone.",
         button1 = "Purge", button2 = "Cancel",
         OnAccept = function()
             Deadpool:PurgeKOSList()
@@ -450,7 +352,7 @@ function UI:CreateMainFrame()
     }
 
     StaticPopupDialogs["DEADPOOL_PURGE_MY_KOS"] = {
-        text = "REMOVE YOUR KOS ENTRIES?\n\nThis will remove all KOS entries that YOU added.\nEntries with active bounties will be kept.\nOther members' entries are not affected.",
+        text = "REMOVE YOUR KOS ENTRIES?\n\nThis will remove all KOS entries that YOU added.\nOther members' entries are not affected.",
         button1 = "Remove Mine", button2 = "Cancel",
         OnAccept = function()
             Deadpool:PurgeMyKOSEntries()
@@ -748,42 +650,9 @@ function UI:ShowRowContextMenu(row)
 
     if activeTab == "kos" then
         table.insert(menuList, { text = Deadpool:ShortName(fullName), isTitle = true, notCheckable = true })
-        table.insert(menuList, { text = "Place Bounty", notCheckable = true, func = function()
-            local d = StaticPopup_Show("DEADPOOL_PLACE_BOUNTY", Deadpool:ShortName(fullName))
-            if d then d.data = fullName end
-        end })
         table.insert(menuList, { text = "Remove from KOS", notCheckable = true, func = function()
             Deadpool:RemoveFromKOS(fullName)
         end })
-    elseif activeTab == "bounties" then
-        table.insert(menuList, { text = "Bounty: " .. Deadpool:ShortName(fullName), isTitle = true, notCheckable = true })
-        if not data.expired then
-            table.insert(menuList, { text = "Add Gold / Points", notCheckable = true, func = function()
-                local d = StaticPopup_Show("DEADPOOL_CONTRIBUTE_BOUNTY", Deadpool:ShortName(fullName))
-                if d then d.data = fullName end
-            end })
-            local myName = Deadpool:GetPlayerFullName()
-            if data.placedBy == myName or Deadpool:IsManager() then
-                table.insert(menuList, { text = "Edit Max Kills", notCheckable = true, func = function()
-                    local d = StaticPopup_Show("DEADPOOL_EDIT_BOUNTY_KILLS", Deadpool:ShortName(fullName))
-                    if d then d.data = fullName end
-                end })
-            end
-            table.insert(menuList, { text = "Expire Bounty", notCheckable = true, func = function()
-                local b = Deadpool.db.bounties[fullName]
-                if b then
-                    local placerOrManager = b.placedBy == Deadpool:GetPlayerFullName() or Deadpool:IsManager()
-                    if placerOrManager then
-                        b.expired = true
-                        b.expiredReason = "Manually expired"
-                        Deadpool:BumpSyncVersion()
-                        Deadpool:RefreshUI()
-                    else
-                        Deadpool:Print(Deadpool.colors.red .. "Only the placer or a manager can expire this bounty.|r")
-                    end
-                end
-            end })
-        end
     elseif activeTab == "enemies" then
         table.insert(menuList, { text = Deadpool:ShortName(fullName), isTitle = true, notCheckable = true })
         if not Deadpool:IsKOS(fullName) then
@@ -791,10 +660,6 @@ function UI:ShowRowContextMenu(row)
                 Deadpool:AddToKOS(fullName, "Public Enemy")
             end })
         end
-        table.insert(menuList, { text = "Place Bounty", notCheckable = true, func = function()
-            local d = StaticPopup_Show("DEADPOOL_PLACE_BOUNTY", Deadpool:ShortName(fullName))
-            if d then d.data = fullName end
-        end })
     end
 
     table.insert(menuList, { text = "Cancel", notCheckable = true })
@@ -831,10 +696,10 @@ function UI:RefreshContent()
     if UI.achievementsPanel then UI.achievementsPanel:Hide() end
 
     -- Filter bar: show only on filterable tabs, reposition content accordingly
-    local showFilter = (activeTab == "kos" or activeTab == "bounties" or activeTab == "enemies"
+    local showFilter = (activeTab == "kos" or activeTab == "arena" or activeTab == "enemies"
         or activeTab == "killlog")
     -- Show Mine button: only on tabs where it makes sense
-    local showMine = (activeTab == "bounties" or activeTab == "killlog")
+    local showMine = (activeTab == "arena" or activeTab == "killlog")
     if filterBar then
         if showFilter then
             filterBar:Show()
@@ -879,7 +744,7 @@ function UI:RenderCurrentTab()
     end
 
     if activeTab == "kos" then self:RenderKOSList()
-    elseif activeTab == "bounties" then self:RenderBounties()
+    elseif activeTab == "arena" then self:RenderArena()
     elseif activeTab == "enemies" then self:RenderEnemies()
     elseif activeTab == "scoreboard" then self:RenderScoreboard()
     elseif activeTab == "mystats" then self:RenderMyStats()
@@ -959,8 +824,7 @@ function UI:RenderKOSList()
         { text = "Our Kills", x = 270, w = 60 },
         { text = "Their Kills", x = 332, w = 65 },
         { text = "Last Seen", x = 399, w = 140 },
-        { text = "Bounty",    x = 541, w = 65 },
-        { text = "Reason",    x = 608, w = 305 }
+        { text = "Reason",    x = 541, w = 375 }
     )
     local data = Deadpool:GetKOSSorted("totalKills", false)
     local myName = Deadpool:GetPlayerFullName()
@@ -990,30 +854,23 @@ function UI:RenderKOSList()
         if idx <= numRows then
             local e = data[idx]; row.data = e; row:Show(); RowBg(row, idx)
             local name = e.class and Deadpool:ClassColor(e.class, e.name or Deadpool:ShortName(e._key)) or (e.name or Deadpool:ShortName(e._key))
+            -- Nemesis badge: mutual kills
+            local enemy = Deadpool.demoData:GetMergedEnemySheet()[e._key]
+            local theirKills = enemy and enemy.timesKilledUs or 0
+            if theirKills > 0 and (e.totalKills or 0) > 0 then
+                name = name .. Deadpool.colors.red .. " [N]|r"
+            end
             SetCol(row, 1, 4, 150, name)
             SetCol(row, 2, 156, 80, e.class and Deadpool:ClassColor(e.class, e.class) or "?")
             SetCol(row, 3, 238, 30, e.level and tostring(e.level) or "?")
             SetCol(row, 4, 270, 60, Deadpool.colors.green .. tostring(e.totalKills or 0) .. "|r")
-            -- Their kills on us from enemy sheet
-            local enemy = Deadpool.demoData:GetMergedEnemySheet()[e._key]
-            local theirKills = enemy and enemy.timesKilledUs or 0
+            -- Their kills on us (enemy already fetched above)
             local theirColor = theirKills > 0 and Deadpool.colors.red or Deadpool.colors.grey
             SetCol(row, 5, 332, 65, theirColor .. tostring(theirKills) .. "|r")
             local seenText = e.lastSeenZone and (e.lastSeenZone .. " " .. Deadpool:TimeAgo(e.lastSeenTime)) or "-"
             SetCol(row, 6, 399, 140, seenText)
-            local bText = ""
-            if Deadpool:HasActiveBounty(e._key) then
-                local b = Deadpool:GetBounty(e._key)
-                if (b.bountyPoints or 0) > 0 and (b.bountyGold or 0) > 0 then
-                    bText = Deadpool.colors.gold .. (b.bountyGold or 0) .. "g|r+" .. Deadpool.colors.yellow .. (b.bountyPoints or 0) .. "p|r"
-                elseif (b.bountyPoints or 0) > 0 then
-                    bText = Deadpool.colors.yellow .. (b.bountyPoints or 0) .. "pts|r"
-                else
-                    bText = Deadpool.colors.gold .. (b.bountyGold or 0) .. "g|r"
-                end
-            end
-            SetCol(row, 7, 541, 65, bText)
-            SetCol(row, 8, 608, 305, Deadpool.colors.grey .. (e.reason or "") .. "|r")
+            SetCol(row, 7, 541, 375, Deadpool.colors.grey .. (e.reason or "") .. "|r")
+            HideCols(row, 8, 8)
             row.tooltipFunc = function()
                 GameTooltip:AddLine(name, 1, 1, 1)
                 if e.race then GameTooltip:AddLine("Race: " .. e.race, 0.7, 0.7, 0.7) end
@@ -1029,22 +886,25 @@ function UI:RenderKOSList()
 end
 
 ----------------------------------------------------------------------
--- Bounties tab
+-- Arena Tracker tab (local only)
 ----------------------------------------------------------------------
-function UI:RenderBounties()
+function UI:RenderArena()
     self:SetHeaders(
-        { text = "Target",    x = 4,   w = 180 },
-        { text = "Bounty",    x = 186, w = 110 },
-        { text = "Progress",  x = 298, w = 130 },
-        { text = "Placed By", x = 430, w = 160 },
-        { text = "Placed",    x = 592, w = 140 },
-        { text = "Status",    x = 734, w = 180 }
+        { text = "Date",      x = 4,   w = 100 },
+        { text = "Bracket",   x = 106, w = 45 },
+        { text = "Result",    x = 153, w = 45 },
+        { text = "K/D",       x = 200, w = 40 },
+        { text = "Rating",    x = 242, w = 55 },
+        { text = "+/-",       x = 299, w = 45 },
+        { text = "Team",      x = 346, w = 260 },
+        { text = "Opponents", x = 608, w = 260 }
     )
-    local data = Deadpool:GetAllBounties()
+    local data = Deadpool.db.arenaLog or {}
     if filterText ~= "" then
         local f = {}
         for _, e in ipairs(data) do
-            if ((e.target or "") .. (e.placedBy or "")):lower():find(filterText, 1, true) then table.insert(f, e) end
+            local searchStr = table.concat(e.team or {}, " ") .. " " .. table.concat(e.opponents or {}, " ") .. " " .. (e.bracket or "")
+            if searchStr:lower():find(filterText, 1, true) then table.insert(f, e) end
         end
         data = f
     end
@@ -1057,49 +917,217 @@ function UI:RenderBounties()
         local row = contentArea.rows[i]
         local idx = i + offset
         if idx <= numRows then
-            local e = data[idx]; row.data = e; row:Show(); RowBg(row, idx)
-            local kos = Deadpool:GetKOSEntry(e.target)
-            local cn = kos and kos.class
-            local nm = cn and Deadpool:ClassColor(cn, Deadpool:ShortName(e.target)) or Deadpool:ShortName(e.target)
-            SetCol(row, 1, 4, 180, nm)
-            local reward
-            if (e.bountyType == "points" or (e.bountyPoints or 0) > 0) and (e.bountyGold or 0) == 0 then
-                reward = Deadpool.colors.yellow .. (e.bountyPoints or 0) .. " pts|r"
-            elseif (e.bountyPoints or 0) > 0 then
-                reward = Deadpool.colors.gold .. (e.bountyGold or 0) .. "g|r" .. " + " .. Deadpool.colors.yellow .. (e.bountyPoints or 0) .. " pts|r"
+            local e = data[idx]; row.data = e; row:Show()
+            -- Row tint: green for wins, red for losses
+            if e.won then
+                row._bg:SetColorTexture(0.05, 0.2, 0.05, 0.3)
             else
-                reward = Deadpool.colors.gold .. (e.bountyGold or 0) .. "g|r"
+                row._bg:SetColorTexture(0.2, 0.05, 0.05, 0.3)
             end
-            SetCol(row, 2, 186, 110, reward)
-            SetCol(row, 3, 298, 130, (e.currentKills or 0) .. " / " .. (e.maxKills or 10))
-            SetCol(row, 4, 430, 160, Deadpool:ShortName(e.placedBy or "?"))
-            SetCol(row, 5, 592, 140, Deadpool:TimeAgo(e.placedDate))
-            local st
-            if e.expired then st = Deadpool.colors.grey .. "EXPIRED|r"
-            elseif (e.currentKills or 0) >= (e.maxKills or 10) then st = Deadpool.colors.green .. "COMPLETE|r"
-            else st = Deadpool.colors.green .. "ACTIVE|r" end
-            SetCol(row, 6, 734, 180, st)
-            HideCols(row, 7, 8)
+            SetCol(row, 1, 4, 100, Deadpool.colors.grey .. Deadpool:TimeAgo(e.time) .. "|r")
+            SetCol(row, 2, 106, 45, Deadpool.colors.yellow .. (e.bracket or "?") .. "|r")
+            local resultColor = e.won and Deadpool.colors.green or Deadpool.colors.red
+            SetCol(row, 3, 153, 45, resultColor .. (e.won and "WIN" or "LOSS") .. "|r")
+            local kd = (e.myKills or 0) .. "/" .. (e.myDeaths or 0)
+            SetCol(row, 4, 200, 40, kd)
+            local rating = (e.newRating or 0) > 0 and tostring(e.newRating) or Deadpool.colors.grey .. "-|r"
+            SetCol(row, 5, 242, 55, rating)
+            local change = (e.newRating or 0) - (e.oldRating or 0)
+            if (e.newRating or 0) > 0 then
+                local cc = change >= 0 and Deadpool.colors.green or Deadpool.colors.red
+                local cs = change >= 0 and ("+" .. change) or tostring(change)
+                SetCol(row, 6, 299, 45, cc .. cs .. "|r")
+            else
+                SetCol(row, 6, 299, 45, Deadpool.colors.grey .. "-|r")
+            end
+            SetCol(row, 7, 346, 260, table.concat(e.team or {}, ", "))
+            SetCol(row, 8, 608, 260, table.concat(e.opponents or {}, ", "))
+
+            -- Click handler for detail popup
+            row:SetScript("OnClick", function(self, button)
+                if button == "LeftButton" then
+                    UI:ShowArenaMatchPopup(e)
+                elseif button == "RightButton" then
+                    UI:ShowRowContextMenu(self)
+                end
+            end)
+
             row.tooltipFunc = function()
-                GameTooltip:AddLine("Bounty: " .. Deadpool:ShortName(e.target), 1, 0.84, 0)
-                local tipReward = ""
-                if (e.bountyGold or 0) > 0 then tipReward = Deadpool:FormatGold(e.bountyGold) end
-                if (e.bountyPoints or 0) > 0 then
-                    tipReward = tipReward .. (tipReward ~= "" and " + " or "") .. (e.bountyPoints or 0) .. " pts"
+                GameTooltip:AddLine((e.won and Deadpool.colors.green or Deadpool.colors.red) .. (e.won and "WIN" or "LOSS") .. "|r  " .. (e.bracket or "?"), 1, 1, 1)
+                if e.map and e.map ~= "" then GameTooltip:AddLine(e.map, 0.7, 0.7, 0.7) end
+                if (e.duration or 0) > 0 then
+                    local m = math.floor(e.duration / 60)
+                    local s = e.duration % 60
+                    GameTooltip:AddLine("Duration: " .. m .. "m " .. s .. "s", 0.6, 0.6, 0.6)
                 end
-                GameTooltip:AddLine(tipReward .. " for " .. (e.maxKills or 10) .. " kills", 0.7, 0.7, 0.7)
-                if e.claims and #e.claims > 0 then
-                    GameTooltip:AddLine(" "); GameTooltip:AddLine("Claims:", 0.9, 0.5, 0.5)
-                    for _, c in ipairs(e.claims) do
-                        GameTooltip:AddLine("  " .. Deadpool:ShortName(c.killer) .. " in " .. (c.zone or "?") .. " (" .. Deadpool:TimeAgo(c.time) .. ")", 0.6, 0.8, 0.6)
-                    end
-                end
-                GameTooltip:AddLine(" "); GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
+                GameTooltip:AddLine("Your K/D: " .. (e.myKills or 0) .. "/" .. (e.myDeaths or 0), 0.8, 0.8, 0.8)
+                if (e.myDamage or 0) > 0 then GameTooltip:AddLine("Damage: " .. e.myDamage, 1, 0.5, 0.3) end
+                if (e.myHealing or 0) > 0 then GameTooltip:AddLine("Healing: " .. e.myHealing, 0.3, 1, 0.5) end
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine("Click for full match details", 0.5, 0.5, 0.5)
+                GameTooltip:Show()
             end
         else row:Hide(); row.data = nil end
     end
-    local a = #Deadpool:GetActiveBounties()
-    statusText:SetText(a .. " active bounties (" .. Deadpool:TableCount(Deadpool.db.bounties) .. " total)")
+    -- Summary by bracket
+    local totals = { wins = 0, losses = 0 }
+    local brackets = {}
+    for _, e in ipairs(Deadpool.db.arenaLog or {}) do
+        if e.won then totals.wins = totals.wins + 1 else totals.losses = totals.losses + 1 end
+        local b = e.bracket or "?"
+        if not brackets[b] then brackets[b] = { w = 0, l = 0 } end
+        if e.won then brackets[b].w = brackets[b].w + 1 else brackets[b].l = brackets[b].l + 1 end
+    end
+    local parts = {}
+    for b, bl in pairs(brackets) do
+        parts[#parts + 1] = b .. ": " .. bl.w .. "W/" .. bl.l .. "L"
+    end
+    statusText:SetText(totals.wins .. "W / " .. totals.losses .. "L  |  " .. table.concat(parts, "  "))
+end
+
+----------------------------------------------------------------------
+-- Arena Match Detail Popup
+----------------------------------------------------------------------
+function UI:ShowArenaMatchPopup(match)
+    local TM = Deadpool.modules.Theme
+    local t = TM.active
+
+    if UI._arenaPopup then UI._arenaPopup:Hide(); UI._arenaPopup = nil end
+
+    local popup = CreateFrame("Frame", "DeadpoolArenaPopup", UIParent, "BackdropTemplate")
+    popup:SetSize(440, 320)
+    popup:SetPoint("CENTER", 0, 60)
+    popup:SetFrameStrata("DIALOG")
+    popup:SetMovable(true); popup:EnableMouse(true)
+    popup:RegisterForDrag("LeftButton")
+    popup:SetScript("OnDragStart", popup.StartMoving)
+    popup:SetScript("OnDragStop", popup.StopMovingOrSizing)
+    popup:SetClampedToScreen(true)
+    tinsert(UISpecialFrames, "DeadpoolArenaPopup")
+
+    local borderColor = match.won and {0.3, 0.8, 0.3} or {0.8, 0.3, 0.3}
+    popup:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8", edgeFile = "Interface\\Buttons\\WHITE8x8", edgeSize = 2 })
+    popup:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.96)
+    popup:SetBackdropBorderColor(borderColor[1], borderColor[2], borderColor[3], 0.8)
+    UI._arenaPopup = popup
+
+    -- Top accent
+    local topBar = popup:CreateTexture(nil, "ARTWORK")
+    topBar:SetHeight(3); topBar:SetPoint("TOPLEFT", 2, -2); topBar:SetPoint("TOPRIGHT", -2, -2)
+    topBar:SetColorTexture(borderColor[1], borderColor[2], borderColor[3], 0.9)
+
+    -- Close
+    local closeBtn = CreateFrame("Button", nil, popup)
+    closeBtn:SetSize(20, 20); closeBtn:SetPoint("TOPRIGHT", -4, -4)
+    local xText = closeBtn:CreateFontString(nil, "OVERLAY")
+    xText:SetFont(TM:GetFont(14, "OUTLINE")); xText:SetPoint("CENTER")
+    xText:SetText("X"); xText:SetTextColor(0.8, 0.2, 0.2)
+    closeBtn:SetScript("OnClick", function() popup:Hide() end)
+
+    -- Header
+    local resultColor = match.won and Deadpool.colors.green or Deadpool.colors.red
+    local header = popup:CreateFontString(nil, "OVERLAY")
+    header:SetFont(TM:GetFont(16, "OUTLINE")); header:SetPoint("TOP", 0, -12)
+    header:SetText(resultColor .. (match.won and "VICTORY" or "DEFEAT") .. "|r  " ..
+        Deadpool.colors.yellow .. (match.bracket or "?") .. "|r")
+
+    -- Match info
+    local cy = -34
+    local function InfoLine(label, value)
+        local lbl = popup:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(10, "")); lbl:SetPoint("TOPLEFT", 20, cy)
+        lbl:SetText(Deadpool.colors.grey .. label .. ":|r"); lbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+        local val = popup:CreateFontString(nil, "OVERLAY")
+        val:SetFont(TM:GetFont(10, "")); val:SetPoint("TOPLEFT", 110, cy)
+        val:SetText(value)
+        cy = cy - 16
+    end
+
+    InfoLine("Date", Deadpool:FormatDate(match.time))
+    if match.map and match.map ~= "" then InfoLine("Map", match.map) end
+    if (match.duration or 0) > 0 then
+        InfoLine("Duration", math.floor(match.duration / 60) .. "m " .. (match.duration % 60) .. "s")
+    end
+    if (match.newRating or 0) > 0 then
+        local change = match.newRating - (match.oldRating or 0)
+        local cc = change >= 0 and Deadpool.colors.green or Deadpool.colors.red
+        local cs = change >= 0 and ("+" .. change) or tostring(change)
+        InfoLine("Rating", match.newRating .. "  " .. cc .. cs .. "|r")
+    end
+    cy = cy - 6
+
+    -- Scoreboard header
+    local sbHeader = popup:CreateFontString(nil, "OVERLAY")
+    sbHeader:SetFont(TM:GetFont(10, "OUTLINE")); sbHeader:SetPoint("TOPLEFT", 20, cy)
+    sbHeader:SetText(TM:AccentHex() .. "SCOREBOARD|r")
+    cy = cy - 4
+
+    -- Column headers
+    cy = cy - 14
+    local cols = { { "Player", 20, 120 }, { "K", 148, 30 }, { "D", 180, 30 }, { "Dmg", 215, 65 }, { "Heal", 285, 65 } }
+    for _, c in ipairs(cols) do
+        local h = popup:CreateFontString(nil, "OVERLAY")
+        h:SetFont(TM:GetFont(9, "OUTLINE")); h:SetPoint("TOPLEFT", c[2], cy)
+        h:SetText(c[1]); h:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+    end
+    cy = cy - 14
+
+    -- Score rows
+    if match.scores then
+        -- Our team first, then enemies
+        local sorted = {}
+        for _, s in ipairs(match.scores) do sorted[#sorted + 1] = s end
+        table.sort(sorted, function(a, b)
+            if a.isEnemy ~= b.isEnemy then return not a.isEnemy end
+            return (a.damage or 0) > (b.damage or 0)
+        end)
+
+        local lastWasTeam = true
+        for _, s in ipairs(sorted) do
+            -- Divider between teams
+            if s.isEnemy and lastWasTeam then
+                local div = popup:CreateTexture(nil, "ARTWORK")
+                div:SetHeight(1); div:SetPoint("TOPLEFT", 20, cy - 2); div:SetPoint("RIGHT", popup, "RIGHT", -20, 0)
+                div:SetColorTexture(t.border[1], t.border[2], t.border[3], 0.4)
+                cy = cy - 6
+                lastWasTeam = false
+            end
+
+            local nameColor = s.class and Deadpool.classColors[s.class]
+            local displayName = nameColor and (nameColor .. s.name .. "|r") or s.name
+            if s.isEnemy then displayName = Deadpool.colors.red .. s.name .. "|r" end
+            if s.name == UnitName("player") then displayName = Deadpool.colors.cyan .. s.name .. "|r" end
+
+            local row = popup:CreateFontString(nil, "OVERLAY")
+            row:SetFont(TM:GetFont(10, "")); row:SetPoint("TOPLEFT", 20, cy)
+            row:SetText(displayName)
+
+            local k = popup:CreateFontString(nil, "OVERLAY")
+            k:SetFont(TM:GetFont(10, "")); k:SetPoint("TOPLEFT", 148, cy); k:SetText(tostring(s.kills or 0))
+
+            local d = popup:CreateFontString(nil, "OVERLAY")
+            d:SetFont(TM:GetFont(10, "")); d:SetPoint("TOPLEFT", 180, cy); d:SetText(tostring(s.deaths or 0))
+
+            local dmg = popup:CreateFontString(nil, "OVERLAY")
+            dmg:SetFont(TM:GetFont(10, "")); dmg:SetPoint("TOPLEFT", 215, cy)
+            dmg:SetText(Deadpool.colors.orange .. self:FormatNumber(s.damage or 0) .. "|r")
+
+            local heal = popup:CreateFontString(nil, "OVERLAY")
+            heal:SetFont(TM:GetFont(10, "")); heal:SetPoint("TOPLEFT", 285, cy)
+            heal:SetText(Deadpool.colors.green .. self:FormatNumber(s.healing or 0) .. "|r")
+
+            cy = cy - 16
+        end
+    end
+
+    popup:SetHeight(math.abs(cy) + 20)
+    popup:Show()
+end
+
+function UI:FormatNumber(n)
+    if n >= 1000000 then return string.format("%.1fM", n / 1000000)
+    elseif n >= 1000 then return string.format("%.1fK", n / 1000)
+    else return tostring(n) end
 end
 
 ----------------------------------------------------------------------
@@ -1256,13 +1284,12 @@ function UI:RenderScoreboard()
         { text = "#",            x = 4,   w = 30 },
         { text = "Player",       x = 36,  w = 160 },
         { text = "Points",       x = 198, w = 80,  sort = "totalPoints" },
-        { text = "Total Kills",  x = 280, w = 80,  sort = "totalKills" },
-        { text = "KOS",          x = 362, w = 60,  sort = "kosKills" },
-        { text = "Bounty",       x = 424, w = 60,  sort = "bountyKills" },
-        { text = "PvP",          x = 486, w = 60,  sort = "randomKills" },
-        { text = "Streak",       x = 548, w = 55,  sort = "bestStreak" },
-        { text = "Assists",      x = 605, w = 55,  sort = "assists" },
-        { text = "Ach Pts",      x = 662, w = 60 },
+        { text = "Total Kills",  x = 280, w = 70,  sort = "totalKills" },
+        { text = "KOS",          x = 352, w = 50,  sort = "kosKills" },
+        { text = "PvP",          x = 404, w = 50,  sort = "randomKills" },
+        { text = "Streak",       x = 456, w = 50,  sort = "bestStreak" },
+        { text = "Assists",      x = 508, w = 55,  sort = "assists" },
+        { text = "Ach Pts",      x = 565, w = 60 },
     }
 
     -- Build clickable headers
@@ -1352,17 +1379,23 @@ function UI:RenderScoreboard()
             if e._key == myName then pn = Deadpool.colors.cyan .. pn .. "|r" end
             SetCol(row, 2, 36, 160, pn)
             SetCol(row, 3, 198, 80, Deadpool.colors.yellow .. (e.totalPoints or 0) .. "|r")
-            SetCol(row, 4, 280, 80, tostring(e.totalKills or 0))
-            SetCol(row, 5, 362, 60, tostring(e.kosKills or 0))
-            SetCol(row, 6, 424, 60, tostring(e.bountyKills or 0))
-            SetCol(row, 7, 486, 60, tostring(e.randomKills or 0))
-            SetCol(row, 8, 548, 55, tostring(e.bestStreak or 0))
-            -- Assists column (col 9 reuses col space)
-            -- Achievement points (only known for local player)
+            SetCol(row, 4, 280, 70, tostring(e.totalKills or 0))
+            SetCol(row, 5, 352, 50, tostring(e.kosKills or 0))
+            SetCol(row, 6, 404, 50, tostring(e.randomKills or 0))
+            SetCol(row, 7, 456, 50, tostring(e.bestStreak or 0))
+            -- Assists column
+            SetCol(row, 8, 508, 55, tostring(e.assists or 0))
+            -- Achievement points (only known for local player or synced)
             local achPtsStr = Deadpool.colors.grey .. "-|r"
             if e._key == myName and AM then
                 achPtsStr = Deadpool.colors.gold .. AM:GetTotalPoints() .. "|r"
+            else
+                local achScores = Deadpool:GetGuildAchScores()
+                if achScores[e._key] then
+                    achPtsStr = Deadpool.colors.gold .. achScores[e._key].score .. "|r"
+                end
             end
+            SetCol(row, 9, 565, 60, achPtsStr)
             row.tooltipFunc = function()
                 GameTooltip:AddLine(Deadpool:ShortName(e._key), 1, 1, 1)
                 GameTooltip:AddLine("Total Points: " .. (e.totalPoints or 0), 1, 1, 0)
@@ -1401,7 +1434,7 @@ function UI:RenderMyStats()
     table.insert(lines, { label = "Achievement Points", value = Deadpool.colors.gold .. achPts .. "|r  (" .. achEarned .. "/" .. achTotal .. " earned)" })
     table.insert(lines, { label = "Total Kills", value = Deadpool.colors.green .. (score.totalKills or 0) .. "|r" })
     table.insert(lines, { label = "KOS Kills", value = Deadpool.colors.red .. (score.kosKills or 0) .. "|r" })
-    table.insert(lines, { label = "Bounty Kills", value = Deadpool.colors.gold .. (score.bountyKills or 0) .. "|r" })
+    table.insert(lines, { label = "KOS Kills", value = Deadpool.colors.red .. (score.kosKills or 0) .. "|r" })
     table.insert(lines, { label = "Random PvP Kills", value = tostring(score.randomKills or 0) })
     table.insert(lines, { label = "Best Streak", value = Deadpool.colors.orange .. (score.bestStreak or 0) .. "|r" })
     table.insert(lines, { label = "Last Kill", value = Deadpool:TimeAgo(score.lastKill) })
@@ -1439,7 +1472,11 @@ function UI:RenderMyStats()
     table.insert(lines, { label = "", value = "" })
     table.insert(lines, { label = Deadpool.colors.header .. "=== GUILD ===|r", value = "" })
     table.insert(lines, { label = "KOS List Size", value = tostring(Deadpool:GetKOSCount()) })
-    table.insert(lines, { label = "Active Bounties", value = tostring(#Deadpool:GetActiveBounties()) })
+    local arenaW, arenaL = 0, 0
+    for _, e in ipairs(Deadpool.db.arenaLog or {}) do
+        if e.won then arenaW = arenaW + 1 else arenaL = arenaL + 1 end
+    end
+    table.insert(lines, { label = "Arena Record", value = arenaW .. "W / " .. arenaL .. "L" })
     table.insert(lines, { label = "Kills Logged", value = tostring(#(Deadpool.demoData:GetMergedKillLog())) })
     table.insert(lines, { label = "Enemies Tracked", value = tostring(Deadpool:TableCount(Deadpool.demoData:GetMergedEnemySheet())) })
 
@@ -1848,9 +1885,43 @@ function UI:BuildAchievementsPanel()
     sumBarFill:SetWidth(math.max(1, 200 * (total > 0 and earned / total or 0)))
     sumBarFill:SetVertexColor(t.accent[1], t.accent[2], t.accent[3], 1)
 
-    -- Scrollable content below summary
+    -- Scrollable content below summary (created first so top3 can adjust anchor)
+    local scrollAnchor = summaryBar
+
+    -- Guild Top 3 Achievement Earners
+    local achScores = Deadpool:GetGuildAchScores()
+    local top3 = {}
+    for name, data in pairs(achScores) do
+        top3[#top3 + 1] = { name = name, score = data.score }
+    end
+    table.sort(top3, function(a, b) return a.score > b.score end)
+
+    if #top3 > 0 then
+        local topBar = CreateFrame("Frame", nil, panel, "BackdropTemplate")
+        topBar:SetHeight(26); topBar:SetPoint("TOPLEFT", summaryBar, "BOTTOMLEFT", 0, -2); topBar:SetPoint("TOPRIGHT", summaryBar, "BOTTOMRIGHT", 0, -2)
+        topBar:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+        topBar:SetBackdropColor(t.bg[1], t.bg[2], t.bg[3], 0.7)
+
+        local topLabel = topBar:CreateFontString(nil, "OVERLAY")
+        topLabel:SetFont(TM:GetFont(9, "OUTLINE")); topLabel:SetPoint("LEFT", 10, 0)
+        topLabel:SetText(Deadpool.colors.grey .. "GUILD TOP:|r")
+
+        local medals = { Deadpool.colors.gold, "|cFFC0C0C0", "|cFFCD7F32" }
+        local ox = 80
+        for i = 1, math.min(3, #top3) do
+            local e = top3[i]
+            local lbl = topBar:CreateFontString(nil, "OVERLAY")
+            lbl:SetFont(TM:GetFont(10, "")); lbl:SetPoint("LEFT", topBar, "LEFT", ox, 0)
+            local myName = Deadpool:GetPlayerFullName()
+            local displayName = e.name == myName and (Deadpool.colors.cyan .. Deadpool:ShortName(e.name) .. "|r") or Deadpool:ShortName(e.name)
+            lbl:SetText(medals[i] .. "#" .. i .. "|r " .. displayName .. " " .. Deadpool.colors.gold .. e.score .. "|r")
+            ox = ox + 180
+        end
+        scrollAnchor = topBar
+    end
+
     local scrollFrame = CreateFrame("ScrollFrame", nil, panel)
-    scrollFrame:SetPoint("TOPLEFT", summaryBar, "BOTTOMLEFT", 0, -2)
+    scrollFrame:SetPoint("TOPLEFT", scrollAnchor, "BOTTOMLEFT", 0, -2)
     scrollFrame:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -10, 0)
     scrollFrame:EnableMouseWheel(true)
 
@@ -2450,101 +2521,11 @@ function UI:BuildSettingsPanel()
     Header("AUTO-KOS", COL2, ry); ry = ry - 24
     Check("Auto-KOS players who kill you", "autoKOSOnAttack", COL2, ry); ry = ry - 34
 
-    -- GUILD CONFIG (GM/Manager-managed point values)
+    -- GUILD CONFIG
     local isGM = Deadpool:IsGM()
     local isManager = Deadpool:IsManager()
     local gc = Deadpool.db.guildConfig
-    local configLabel = isGM and "GUILD CONFIG (GM)" or (isManager and "GUILD CONFIG (Manager)" or "GUILD CONFIG")
-    Header(configLabel, COL2, ry); ry = ry - 24
-
-    -- Helper: editable number field for managers, read-only for others
-    local function ConfigField(label, configKey, x, y)
-        local lbl = content:CreateFontString(nil, "OVERLAY")
-        lbl:SetFont(TM:GetFont(12, ""))
-        lbl:SetPoint("TOPLEFT", content, "TOPLEFT", x + 8, y)
-        lbl:SetText(label)
-        lbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
-
-        if isManager then
-            local editBox = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
-            editBox:SetSize(50, 18)
-            editBox:SetPoint("LEFT", lbl, "RIGHT", 8, 0)
-            editBox:SetAutoFocus(false)
-            editBox:SetMaxLetters(6)
-            editBox:SetText(tostring(gc[configKey] or 0))
-            editBox:SetScript("OnEnterPressed", function(self)
-                local val = tonumber(self:GetText())
-                if val then
-                    Deadpool.db.guildConfig[configKey] = val
-                end
-                self:ClearFocus()
-            end)
-            editBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-            if not UI.settingsPanel._configEdits then UI.settingsPanel._configEdits = {} end
-            UI.settingsPanel._configEdits[configKey] = editBox
-        else
-            local val = content:CreateFontString(nil, "OVERLAY")
-            val:SetFont(TM:GetFont(12, ""))
-            val:SetPoint("LEFT", lbl, "RIGHT", 8, 0)
-            val:SetText(Deadpool.colors.yellow .. tostring(gc[configKey] or 0) .. "|r")
-            val:SetTextColor(t.text[1], t.text[2], t.text[3])
-        end
-    end
-
-    ConfigField("PvP Kill:", "pointsPerKill", COL2, ry); ry = ry - 22
-    ConfigField("KOS Kill:", "pointsPerKOSKill", COL2, ry); ry = ry - 22
-    ConfigField("Bounty Kill:", "pointsPerBountyKill", COL2, ry); ry = ry - 22
-    ConfigField("Underdog 3-5 (x):", "pointsUnderdogMultiplier3", COL2, ry); ry = ry - 22
-    ConfigField("Underdog 6+ (x):", "pointsUnderdogMultiplier6", COL2, ry); ry = ry - 22
-    ConfigField("Full Pts Range:", "pointsLowbieRange", COL2, ry); ry = ry - 22
-    ConfigField("Low Reduction:", "pointsLowbieReduction", COL2, ry); ry = ry - 22
-    ConfigField("Floor Tier (lvls):", "pointsLowbieTier2", COL2, ry); ry = ry - 22
-    ConfigField("Floor Pts:", "pointsLowbieFloor", COL2, ry); ry = ry - 26
-
-    -- Manager/GM: Push Config button
-    if isManager then
-        local pushBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
-        pushBtn:SetSize(140, 22)
-        pushBtn:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
-        pushBtn:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8x8",
-            edgeFile = "Interface\\Buttons\\WHITE8x8",
-            edgeSize = 1,
-        })
-        pushBtn:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
-        pushBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
-        local btnLabel = pushBtn:CreateFontString(nil, "OVERLAY")
-        btnLabel:SetFont(TM:GetFont(11, ""))
-        btnLabel:SetPoint("CENTER")
-        btnLabel:SetText(Deadpool.colors.gold .. "Push to Guild|r")
-        pushBtn:SetScript("OnEnter", function(self)
-            self:SetBackdropColor(t.accent[1] * 0.5, t.accent[2] * 0.5, t.accent[3] * 0.5, 1)
-        end)
-        pushBtn:SetScript("OnLeave", function(self)
-            self:SetBackdropColor(t.accent[1] * 0.3, t.accent[2] * 0.3, t.accent[3] * 0.3, 0.9)
-        end)
-        pushBtn:SetScript("OnClick", function()
-            -- Read values from edit boxes
-            if UI.settingsPanel._configEdits then
-                for key, editBox in pairs(UI.settingsPanel._configEdits) do
-                    local val = tonumber(editBox:GetText())
-                    if val then Deadpool.db.guildConfig[key] = val end
-                end
-            end
-            Deadpool:BroadcastGMConfig()
-        end)
-        ry = ry - 28
-    end
-
-    -- Show who last updated config
-    if gc.updatedBy and gc.updatedBy ~= "" then
-        local infoLbl = content:CreateFontString(nil, "OVERLAY")
-        infoLbl:SetFont(TM:GetFont(10, ""))
-        infoLbl:SetPoint("TOPLEFT", content, "TOPLEFT", COL2 + 8, ry)
-        infoLbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
-        infoLbl:SetText("Last updated by " .. Deadpool:ShortName(gc.updatedBy) .. " " .. Deadpool:TimeAgo(gc.updatedAt))
-    end
-    ry = ry - 26
+    Header(isGM and "GUILD CONFIG (GM)" or (isManager and "GUILD CONFIG (Manager)" or "GUILD CONFIG"), COL2, ry); ry = ry - 24
 
     -- SYNC
     Header("SYNC", COL2, ry); ry = ry - 24
@@ -3392,8 +3373,8 @@ function UI:RenderDashboard()
         -- ============================================================
         -- ROW 1: Stat Cards (7 cards across the top)
         -- ============================================================
-        local cardNames = { "kills", "kos", "bounties", "points", "rank", "kd", "streak" }
-        local cardTitles = { "GUILD KILLS", "KOS TARGETS", "BOUNTIES", "YOUR PTS", "RANK", "K/D RATIO", "BEST STREAK" }
+        local cardNames = { "kills", "kos", "arena", "points", "rank", "kd", "streak" }
+        local cardTitles = { "GUILD KILLS", "KOS TARGETS", "ARENA W/L", "YOUR PTS", "RANK", "K/D RATIO", "BEST STREAK" }
         local numCards = #cardNames
         local cardGap = 6
         local totalGaps = (numCards - 1) * cardGap
@@ -3466,9 +3447,9 @@ function UI:RenderDashboard()
         -- Session stat rows (label + value pairs)
         dashboardFrame.sessionRows = {}
         local sessionLabels = {
-            "Total Kills", "KOS Kills", "Bounty Kills", "Total Points",
+            "Total Kills", "KOS Kills", "Arena W/L", "Total Points",
             "Best Streak", "Deaths", "Nemesis", "Favorite Victim",
-            "Active Bounties", "KOS List Size"
+            "Arena Matches", "KOS List Size"
         }
         for i, label in ipairs(sessionLabels) do
             local lbl = pSession:CreateFontString(nil, "OVERLAY")
@@ -3482,6 +3463,40 @@ function UI:RenderDashboard()
             val:SetPoint("TOPRIGHT", pSession, "TOPRIGHT", -14, -(22 + (i - 1) * 17))
             val:SetJustifyH("RIGHT")
             dashboardFrame.sessionRows[i] = val
+        end
+
+        -- ============================================================
+        -- ROW 4: Zone Heatmap + Nemesis
+        -- ============================================================
+        local row4Y = row3Y + row3H + 8
+        local row4H = 125
+
+        -- Left: PvP Hotspots (top 5 zones by kill count)
+        local pZones = self:CreateDashPanel(dashboardFrame, 0, row4Y, halfW, row4H, "PVP HOTSPOTS")
+        pZones._title = "PVP HOTSPOTS"
+        dashboardFrame.panels.zones = pZones
+        dashboardFrame.zoneLines = {}
+        for i = 1, 5 do
+            local bar = self:CreateStatBar(pZones, 22 + (i - 1) * 20, halfW - 12)
+            bar:ClearAllPoints()
+            bar:SetPoint("TOPLEFT", pZones, "TOPLEFT", 6, -(22 + (i - 1) * 20))
+            bar:SetSize(halfW - 12, 16)
+            dashboardFrame.zoneLines[i] = bar
+        end
+
+        -- Right: Nemesis (mutual rivalry)
+        local pNemesis = self:CreateDashPanel(dashboardFrame, halfW + 10, row4Y, halfW, row4H, "NEMESIS")
+        pNemesis._title = "NEMESIS"
+        dashboardFrame.panels.nemesis = pNemesis
+        dashboardFrame.nemesisLines = {}
+        for i = 1, 5 do
+            local line = pNemesis:CreateFontString(nil, "OVERLAY")
+            line:SetFont(TM:GetFont(10, ""))
+            line:SetPoint("TOPLEFT", pNemesis, "TOPLEFT", 8, -(24 + (i - 1) * 18))
+            line:SetWidth(halfW - 20)
+            line:SetJustifyH("LEFT")
+            line:SetWordWrap(false)
+            dashboardFrame.nemesisLines[i] = line
         end
     end
 
@@ -3505,8 +3520,12 @@ function UI:RenderDashboard()
     dashboardFrame.cards.kos.value:SetText(accentHex .. Deadpool:GetKOSCount() .. "|r")
     dashboardFrame.cards.kos.subtitle:SetText("targets")
 
-    dashboardFrame.cards.bounties.value:SetText(Deadpool.colors.gold .. #Deadpool:GetActiveBounties() .. "|r")
-    dashboardFrame.cards.bounties.subtitle:SetText("active")
+    local arenaWins, arenaLosses = 0, 0
+    for _, e in ipairs(Deadpool.db.arenaLog or {}) do
+        if e.won then arenaWins = arenaWins + 1 else arenaLosses = arenaLosses + 1 end
+    end
+    dashboardFrame.cards.arena.value:SetText(Deadpool.colors.green .. arenaWins .. "|r" .. "/" .. Deadpool.colors.red .. arenaLosses .. "|r")
+    dashboardFrame.cards.arena.subtitle:SetText("arena")
 
     dashboardFrame.cards.points.value:SetText(Deadpool.colors.yellow .. (score.totalPoints or 0) .. "|r")
     dashboardFrame.cards.points.subtitle:SetText("points")
@@ -3559,7 +3578,7 @@ function UI:RenderDashboard()
             local name = e.class and Deadpool:ClassColor(e.class, Deadpool:ShortName(e._key)) or Deadpool:ShortName(e._key)
             local tags = ""
             if Deadpool:IsKOS(e._key) then tags = Deadpool.colors.red .. " [KOS]|r" end
-            if Deadpool:HasActiveBounty(e._key) then tags = tags .. Deadpool.colors.gold .. " [$]|r" end
+            local tags = ""
             bar:SetProgress(e.timesKilledUs, maxEK,
                 Deadpool.colors.red .. "#" .. i .. "|r  " .. name .. tags,
                 Deadpool.colors.red .. (e.timesKilledUs or 0) .. " kills|r")
@@ -3580,8 +3599,7 @@ function UI:RenderDashboard()
             local victim = k.victimClass and Deadpool:ClassColor(k.victimClass, Deadpool:ShortName(k.victim)) or Deadpool:ShortName(k.victim)
             local lvl = k.victimLevel and k.victimLevel > 0 and (Deadpool.colors.grey .. "[" .. k.victimLevel .. "]|r") or ""
             local tag = ""
-            if k.isBounty then tag = Deadpool.colors.gold .. " [$]|r"
-            elseif k.isKOS then tag = Deadpool.colors.red .. " [KOS]|r" end
+            if k.isKOS then tag = Deadpool.colors.red .. " [KOS]|r" end
             local timeStr = Deadpool.colors.grey .. Deadpool:TimeAgo(k.time) .. "|r"
             line:SetText(timeStr .. " " .. Deadpool.colors.green .. killer .. "|r > " .. victim .. " " .. lvl .. tag)
             line:Show()
@@ -3608,14 +3626,89 @@ function UI:RenderDashboard()
     local sRows = dashboardFrame.sessionRows
     sRows[1]:SetText(accentHex .. (score.totalKills or 0) .. "|r")
     sRows[2]:SetText(Deadpool.colors.red .. (score.kosKills or 0) .. "|r")
-    sRows[3]:SetText(Deadpool.colors.gold .. (score.bountyKills or 0) .. "|r")
+    local aw, al = 0, 0
+    for _, e in ipairs(Deadpool.db.arenaLog or {}) do
+        if e.won then aw = aw + 1 else al = al + 1 end
+    end
+    sRows[3]:SetText(Deadpool.colors.green .. aw .. "W|r / " .. Deadpool.colors.red .. al .. "L|r")
     sRows[4]:SetText(Deadpool.colors.yellow .. (score.totalPoints or 0) .. "|r")
     sRows[5]:SetText(Deadpool.colors.orange .. (score.bestStreak or 0) .. "|r")
     sRows[6]:SetText(Deadpool.colors.red .. deaths .. "|r")
     sRows[7]:SetText(nemesis and (Deadpool.colors.red .. Deadpool:ShortName(nemesis) .. " (" .. nemesisCount .. "x)|r") or Deadpool.colors.grey .. "none|r")
     sRows[8]:SetText(favTarget and (Deadpool.colors.green .. Deadpool:ShortName(favTarget) .. " (" .. favCount .. "x)|r") or Deadpool.colors.grey .. "none|r")
-    sRows[9]:SetText(Deadpool.colors.gold .. #Deadpool:GetActiveBounties() .. "|r")
+    sRows[9]:SetText(Deadpool.colors.yellow .. (aw + al) .. "|r")
     sRows[10]:SetText(accentHex .. Deadpool:GetKOSCount() .. "|r")
+
+    -- PvP Hotspots: top 5 zones by kill count
+    local zoneCounts = {}
+    for _, k in ipairs(Deadpool:GetKillLog("all")) do
+        if k.zone and k.zone ~= "" then
+            zoneCounts[k.zone] = (zoneCounts[k.zone] or 0) + 1
+        end
+    end
+    local sortedZones = {}
+    for zone, count in pairs(zoneCounts) do
+        sortedZones[#sortedZones + 1] = { zone = zone, count = count }
+    end
+    table.sort(sortedZones, function(a, b) return a.count > b.count end)
+    local maxZoneKills = sortedZones[1] and sortedZones[1].count or 1
+    for i = 1, 5 do
+        local bar = dashboardFrame.zoneLines[i]
+        if sortedZones[i] then
+            local z = sortedZones[i]
+            local pct = z.count / maxZoneKills  -- 0..1 intensity
+            -- Heatmap color: blue(cold) → yellow(warm) → red(hot)
+            local r, g, b
+            if pct > 0.5 then
+                local t2 = (pct - 0.5) * 2  -- 0..1
+                r = 1.0
+                g = 1.0 - t2 * 0.8   -- yellow → red
+                b = 0
+            else
+                local t2 = pct * 2  -- 0..1
+                r = t2
+                g = 0.4 + t2 * 0.6  -- blue-ish → yellow
+                b = 0.8 - t2 * 0.8
+            end
+            bar.fill:SetVertexColor(r, g, b, 0.85)
+            bar.fill:SetWidth(math.max(1, bar:GetWidth() * pct))
+            bar.label:SetText(z.zone)
+            bar.valueText:SetText(Deadpool.colors.yellow .. z.count .. " kills|r")
+            bar:Show()
+        else
+            bar:Hide()
+        end
+    end
+
+    -- Nemesis: top 5 mutual rivalries from enemy sheet
+    local rivalries = {}
+    for fullName, enemy in pairs(Deadpool.demoData:GetMergedEnemySheet()) do
+        local theyKilledUs = enemy.timesKilledUs or 0
+        local weKilledThem = enemy.timesWeKilledThem or 0
+        if theyKilledUs > 0 and weKilledThem > 0 then
+            local intensity = theyKilledUs + weKilledThem
+            rivalries[#rivalries + 1] = {
+                name = fullName,
+                class = enemy.class,
+                theyKilled = theyKilledUs,
+                weKilled = weKilledThem,
+                intensity = intensity,
+            }
+        end
+    end
+    table.sort(rivalries, function(a, b) return a.intensity > b.intensity end)
+    for i = 1, 5 do
+        local line = dashboardFrame.nemesisLines[i]
+        if rivalries[i] then
+            local r = rivalries[i]
+            local display = r.class and Deadpool:ClassColor(r.class, Deadpool:ShortName(r.name)) or Deadpool:ShortName(r.name)
+            local ratio = Deadpool.colors.green .. r.weKilled .. "|r" .. Deadpool.colors.grey .. ":" .. "|r" .. Deadpool.colors.red .. r.theyKilled .. "|r"
+            line:SetText(display .. "  " .. ratio)
+            line:Show()
+        else
+            line:SetText("")
+        end
+    end
 
     statusText:SetText("Dashboard | " .. TM:GetThemeName() .. (TM.isElvUI and " | ElvUI" or ""))
 end
@@ -3702,10 +3795,9 @@ function UI:CreateMinimapButton()
         GameTooltip:AddLine("Right-click: Force guild sync", 0.7, 0.7, 0.7)
         GameTooltip:AddLine("Drag: Move button", 0.7, 0.7, 0.7)
         local kc = Deadpool:GetKOSCount()
-        local bc = #Deadpool:GetActiveBounties()
         if kc > 0 then
             GameTooltip:AddLine(" ")
-            GameTooltip:AddLine(kc .. " KOS targets | " .. bc .. " active bounties", 0.9, 0.3, 0.3)
+            GameTooltip:AddLine(kc .. " KOS targets", 0.9, 0.3, 0.3)
         end
         local ms = Deadpool.db.scoreboard[Deadpool:GetPlayerFullName()]
         if ms then

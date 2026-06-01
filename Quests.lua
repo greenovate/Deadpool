@@ -267,7 +267,7 @@ function Quests:KillMatchesQuest(quest, victimClass, victimRace, zone, isKOS, is
     elseif t == "RACE_KILL"  then return victimRace and victimRace == quest.target
     elseif t == "ZONE_KILL"  then return zone and zone == quest.target
     elseif t == "KOS_KILL"   then return isKOS
-    elseif t == "BOUNTY_KILL" then return isBounty
+    elseif t == "BOUNTY_KILL" then return false  -- bounties removed
     elseif t == "TOTAL_KILL" then return true
     elseif t == "CONTINENT_KILL" then return zone and ZONE_TO_CONTINENT[zone] == quest.target
     end
@@ -283,7 +283,6 @@ function Quests:OnKill(killerFullName, victimFullName, victimClass, victimRace, 
 
     local data = Deadpool.db.quests
     local isKOS = Deadpool:IsKOS(victimFullName)
-    local isBounty = Deadpool:HasActiveBounty(victimFullName)
     local score = Deadpool:GetOrCreateScore(killerFullName)
     local streak = score.killStreak or 0
 
