@@ -177,8 +177,8 @@ function Nearby:OnCombatLogEvent()
                 self:TrackPlayer(sourceName, sourceGUID, class, race, nil, nil, isStealth)
             end
 
-            -- Stealth alert (own 30s cooldown, never throttled)
-            if isStealth then
+            -- Stealth alert (own 30s cooldown, respects stealthAlertEnabled setting)
+            if isStealth and Deadpool.db.settings.stealthAlertEnabled ~= false then
                 if srcFull then
                     local now = time()
                     if not alertCooldowns["stealth_" .. srcFull] or (now - alertCooldowns["stealth_" .. srcFull]) >= 30 then
@@ -189,8 +189,9 @@ function Nearby:OnCombatLogEvent()
                         local display = class and Deadpool:ClassColor(class, Deadpool:ShortName(srcFull))
                             or Deadpool:ShortName(srcFull)
                         Deadpool:Print("|cFFFF66FFSTEALTH DETECTED!|r " .. display .. " |cFFFF66FFjust stealthed nearby!|r")
-                        if Deadpool.db.settings.alertSound then
-                            Deadpool:PlayKOSAlertSound()
+                        local stealthSound = Deadpool.db.settings.stealthAlertSound
+                        if stealthSound and stealthSound ~= "none" then
+                            Deadpool:PlaySoundByKey(stealthSound)
                         end
                     end
                 end
@@ -630,6 +631,11 @@ end
 ----------------------------------------------------------------------
 function Nearby:UpdateWidget()
     if not widget or isMinimized then return end
+    -- Respect nearbyEnabled setting
+    if Deadpool.db.settings.nearbyEnabled == false then
+        widget:Hide()
+        return
+    end
     -- Skip frame resizing during combat (protected function restriction)
     if InCombatLockdown() then return end
     -- In sanctuary: clear tracked list and hide all rows
@@ -1021,7 +1027,11 @@ function Nearby:Init()
         Nearby:ScanUnit("mouseover")
     end)
 
-    -- Build the widget
+    -- Build the widget (respects nearbyEnabled setting)
+    if Deadpool.db.settings.nearbyEnabled == false then
+        -- Don't build widget if disabled
+        return
+    end
     self:BuildWidget()
     self:BuildDirectionArrow()
 

@@ -28,6 +28,7 @@ local DEFAULTS = {
         theme = "deadpool",
         uiScale = 1.0,
         showDemoData = false,
+        nearbyEnabled = true,          -- show nearby enemy tracker widget
         nearbyWidgetPos = nil,
         killSoundEnabled = true,
         killSound = "gunshot",           -- gunshot, none, or custom
@@ -36,6 +37,8 @@ local DEFAULTS = {
         partyDeathSound = "partydeath", -- sound when party/raid member dies
         partyAttackSound = "warning",    -- sound when party/raid member is attacked
         kosAlertSound = "siren",       -- sound when KOS target spotted
+        stealthAlertEnabled = true,    -- alert when enemy stealths nearby
+        stealthAlertSound = "warning", -- sound for stealth detection
         showAlertFrame = true,
         alertFramePos = nil,          -- {point, relPoint, x, y}
     },

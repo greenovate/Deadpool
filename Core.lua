@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------
 
 Deadpool = {}
-Deadpool.version = "2.0"
+Deadpool.version = "2.0.1"
 Deadpool.prefix = "DEADPOOL"
 Deadpool.modules = {}
 
@@ -316,6 +316,10 @@ function Deadpool:PlaySoundByKey(soundKey)
     if sound and sound.file then
         PlaySoundFile(sound.file, "Master")
     end
+end
+
+function Deadpool:GetAllSounds()
+    return ALL_SOUNDS
 end
 
 function Deadpool:PlayKillSound(killType, streak)

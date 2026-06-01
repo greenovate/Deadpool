@@ -218,6 +218,7 @@ function UI:CreateMainFrame()
     closeBtn:SetScript("OnEnter", function() xText:SetTextColor(1, 0.4, 0.4) end)
     closeBtn:SetScript("OnLeave", function() xText:SetTextColor(0.5, 0.2, 0.2) end)
     closeBtn:SetScript("OnClick", function() mainFrame:Hide() end)
+    closeBtn:SetFrameLevel(mainFrame:GetFrameLevel() + 20)
 
     self:CreateTabs()
     self:CreateFilterBar()
@@ -2302,15 +2303,40 @@ function UI:BuildSettingsPanel()
     local TM = Deadpool.modules.Theme
     local t = TM.active
 
-    -- Outer container (clips content)
+    -- Outer container
     UI.settingsPanel = CreateFrame("Frame", nil, mainFrame)
     UI.settingsPanel:SetPoint("TOPLEFT", mainFrame.sidebar, "TOPRIGHT", 2, -6)
     UI.settingsPanel:SetPoint("BOTTOMRIGHT", mainFrame, "BOTTOMRIGHT", -20, 30)
     UI.settingsPanel:Hide()
 
-    -- ScrollFrame for settings content
+    -- Banner header
+    local banner = CreateFrame("Frame", nil, UI.settingsPanel, "BackdropTemplate")
+    banner:SetHeight(38)
+    banner:SetPoint("TOPLEFT", 0, 0)
+    banner:SetPoint("TOPRIGHT", 0, 0)
+    banner:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8x8" })
+    banner:SetBackdropColor(t.accent[1]*0.08, t.accent[2]*0.08, t.accent[3]*0.08, 0.8)
+    local bannerLine = banner:CreateTexture(nil, "ARTWORK", nil, 1)
+    bannerLine:SetHeight(1)
+    bannerLine:SetPoint("BOTTOMLEFT", 0, 0)
+    bannerLine:SetPoint("BOTTOMRIGHT", 0, 0)
+    bannerLine:SetTexture("Interface\\Buttons\\WHITE8x8")
+    TM:SetGradient(bannerLine, "HORIZONTAL",
+        t.accent[1], t.accent[2], t.accent[3], 0.6,
+        t.accent[1], t.accent[2], t.accent[3], 0.05)
+    local bannerTitle = banner:CreateFontString(nil, "OVERLAY")
+    bannerTitle:SetFont(TM:GetFont(14, "OUTLINE"))
+    bannerTitle:SetPoint("LEFT", 10, 4)
+    bannerTitle:SetText(TM:AccentHex() .. "SETTINGS|r")
+    local bannerSub = banner:CreateFontString(nil, "OVERLAY")
+    bannerSub:SetFont(TM:GetFont(10, ""))
+    bannerSub:SetPoint("LEFT", 10, -10)
+    bannerSub:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+    bannerSub:SetText("Theme: " .. TM:GetThemeName() .. "  |  v" .. Deadpool.version)
+
+    -- ScrollFrame for settings content (below banner)
     local scrollFrame = CreateFrame("ScrollFrame", nil, UI.settingsPanel)
-    scrollFrame:SetPoint("TOPLEFT", 0, 0)
+    scrollFrame:SetPoint("TOPLEFT", banner, "BOTTOMLEFT", 0, -2)
     scrollFrame:SetPoint("BOTTOMRIGHT", -12, 0)  -- leave room for scrollbar
     scrollFrame:EnableMouseWheel(true)
     scrollFrame:SetScript("OnMouseWheel", function(self, delta)
@@ -2327,7 +2353,7 @@ function UI:BuildSettingsPanel()
     -- Scroll bar
     local scrollBar = CreateFrame("Slider", nil, UI.settingsPanel, "BackdropTemplate")
     scrollBar:SetWidth(8)
-    scrollBar:SetPoint("TOPRIGHT", UI.settingsPanel, "TOPRIGHT", 0, -2)
+    scrollBar:SetPoint("TOPRIGHT", UI.settingsPanel, "TOPRIGHT", 0, -42)
     scrollBar:SetPoint("BOTTOMRIGHT", UI.settingsPanel, "BOTTOMRIGHT", 0, 2)
     scrollBar:SetOrientation("VERTICAL")
     scrollBar:SetMinMaxValues(0, 1)
@@ -2505,8 +2531,8 @@ function UI:BuildSettingsPanel()
     end)
     ly = ly - 34
 
-    -- KILL SOUNDS
-    Header("KILL SOUNDS", 0, ly); ly = ly - 24
+    -- SOUNDS
+    Header("SOUNDS & ALERTS", 0, ly); ly = ly - 24
     Check("Play sound on killing blow", "killSoundEnabled", 0, ly); ly = ly - 26
     Check("Streak announcer sounds", "streakSoundsEnabled", 0, ly); ly = ly - 28
 
@@ -2603,7 +2629,8 @@ function UI:BuildSettingsPanel()
     SoundRow("Death", "deathSound", ly); ly = ly - 26
     SoundRow("Party Death", "partyDeathSound", ly); ly = ly - 26
     SoundRow("Party Attack", "partyAttackSound", ly); ly = ly - 26
-    SoundRow("KOS Alert", "kosAlertSound", ly); ly = ly - 30
+    SoundRow("KOS Alert", "kosAlertSound", ly); ly = ly - 26
+    SoundRow("Stealth", "stealthAlertSound", ly); ly = ly - 30
 
     -- Custom sound: add from Sounds folder
     local csHeader = content:CreateFontString(nil, "OVERLAY")
@@ -2649,9 +2676,10 @@ function UI:BuildSettingsPanel()
     end)
     ly = ly - 26
 
-    -- DEMO DATA
-    Header("DEMO DATA", 0, ly); ly = ly - 24
-    Check("Show demo data (sample entries)", "showDemoData", 0, ly); ly = ly - 26
+    -- NEARBY WIDGET
+    Header("NEARBY WIDGET", 0, ly); ly = ly - 24
+    Check("Show nearby enemy tracker", "nearbyEnabled", 0, ly); ly = ly - 22
+    Check("Stealth detection alerts", "stealthAlertEnabled", 0, ly); ly = ly - 26
 
     -- ========================
     -- RIGHT COLUMN
