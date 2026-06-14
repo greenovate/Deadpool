@@ -39,6 +39,8 @@ local DEFAULTS = {
         kosAlertSound = "siren",       -- sound when KOS target spotted
         stealthAlertEnabled = true,    -- alert when enemy stealths nearby
         stealthAlertSound = "warning", -- sound for stealth detection
+        pvpNearbyAlert = true,         -- alert when PvP happening nearby
+        pvpNearbySound = "engage1",    -- sound for PvP nearby alert
         showAlertFrame = true,
         alertFramePos = nil,          -- {point, relPoint, x, y}
     },
@@ -223,7 +225,7 @@ function Deadpool:WipeGuildData(reason)
     end
     self.db.syncVersion = 0
     self.db.lastSync = 0
-    self:Print(self.colors.yellow .. "Guild data reset (" .. reason .. "). Syncing fresh...|r")
+    self:Print(self.colors.grey .. "Different guild detected — syncing data for " .. (self.db._guildName or "this guild") .. "|r")
 end
 
 ----------------------------------------------------------------------

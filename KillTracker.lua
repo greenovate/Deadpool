@@ -188,30 +188,71 @@ function KillTracker:CaptureArenaResult()
     local teamSize = #team + 1  -- us + teammates
     local bracket = teamSize .. "v" .. teamSize
 
-    -- Rating from GetBattlefieldTeamInfo(teamIndex)
-    -- Returns: teamName, oldRating, newRating, currentRating
+    -- Rating: try multiple APIs (TBC Anniversary varies)
     local oldRating, newRating = 0, 0
+
+    -- Method 1: GetBattlefieldTeamInfo (0-indexed and 1-indexed)
     if GetBattlefieldTeamInfo then
-        for teamIdx = 0, 1 do
-            local ok, teamName, oldR, newR, curR = pcall(GetBattlefieldTeamInfo, teamIdx)
-            if ok and oldR and newR then
-                -- Check if this team index matches our faction
-                if teamIdx == myTeam then
-                    oldRating = oldR or 0
-                    newRating = newR or 0
+        for teamIdx = 0, 2 do
+            local ok, r1, r2, r3, r4 = pcall(GetBattlefieldTeamInfo, teamIdx)
+            if ok then
+                Deadpool:Debug("TeamInfo[" .. teamIdx .. "]: " .. tostring(r1) .. ", " .. tostring(r2) .. ", " .. tostring(r3) .. ", " .. tostring(r4))
+                -- r1=teamName, r2=oldRating, r3=newRating OR r1=oldRating, r2=newRating
+                if type(r1) == "number" and type(r2) == "number" then
+                    -- No team name, just ratings
+                    if teamIdx == myTeam or teamIdx == myTeam + 1 then
+                        oldRating = r1; newRating = r2
+                    end
+                elseif type(r2) == "number" and type(r3) == "number" then
+                    if teamIdx == myTeam or teamIdx == myTeam + 1 then
+                        oldRating = r2; newRating = r3
+                    end
                 end
             end
         end
-        -- Fallback: try 1-indexed
-        if oldRating == 0 and newRating == 0 then
-            for teamIdx = 1, 2 do
-                local ok, teamName, oldR, newR, curR = pcall(GetBattlefieldTeamInfo, teamIdx)
-                if ok and oldR and newR then
-                    if (teamIdx - 1) == myTeam then
-                        oldRating = oldR or 0
-                        newRating = newR or 0
-                    end
+    end
+
+    -- Method 2: GetBattlefieldArenaFaction + direct index
+    if oldRating == 0 and newRating == 0 and GetBattlefieldArenaFaction then
+        local ok, faction = pcall(GetBattlefieldArenaFaction)
+        if ok and faction then
+            Deadpool:Debug("ArenaFaction: " .. tostring(faction))
+        end
+    end
+
+    -- Method 3: Check scoreboard for rating columns via GetBattlefieldScore
+    -- Some TBC builds include personalRating in the return
+    if oldRating == 0 and newRating == 0 then
+        for i = 1, numScores do
+            local fields = { GetBattlefieldScore(i) }
+            local name = fields[1]
+            if name then
+                local shortName = name:match("^(.-)%-") or name
+                if shortName == UnitName("player") then
+                    -- Dump all fields for debug
+                    local dump = {}
+                    for fi = 1, #fields do dump[fi] = tostring(fields[fi]) end
+                    Deadpool:Debug("MyScore fields: " .. table.concat(dump, " | "))
                 end
+            end
+        end
+    end
+
+    -- Method 4: GetPersonalRatedInfo (modern API)
+    if oldRating == 0 and newRating == 0 then
+        if C_PvP and C_PvP.GetPersonalRatedInfo then
+            local bracketIdx = (teamSize == 2) and 1 or (teamSize == 3) and 2 or 3
+            local ok, info = pcall(C_PvP.GetPersonalRatedInfo, bracketIdx)
+            if ok and info then
+                Deadpool:Debug("PersonalRatedInfo: " .. tostring(info.personalRating) .. " / " .. tostring(info.seasonBest))
+                newRating = info.personalRating or 0
+            end
+        elseif GetPersonalRatedInfo then
+            local bracketIdx = (teamSize == 2) and 1 or (teamSize == 3) and 2 or 3
+            local ok, rating, seasonBest = pcall(GetPersonalRatedInfo, bracketIdx)
+            if ok and rating then
+                Deadpool:Debug("GetPersonalRatedInfo: " .. tostring(rating))
+                newRating = rating or 0
             end
         end
     end

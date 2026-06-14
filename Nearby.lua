@@ -24,6 +24,11 @@ local WIDGET_WIDTH = 220
 local ROW_HEIGHT = 18
 local scrollOffset = 0        -- for mouse wheel scrolling
 
+-- PvP Nearby alert state
+local pvpNearbyLastAlert = 0     -- GetTime() of last PvP nearby alert
+local PVP_NEARBY_COOLDOWN = 45   -- seconds between PvP nearby alerts
+local pvpNearbyCombatants = {}   -- [name] = true, tracks unique hostiles in current alert window
+
 -- Combat log flag constants
 local COMBATLOG_OBJECT_REACTION_HOSTILE = 0x00000040
 local COMBATLOG_OBJECT_REACTION_FRIENDLY = 0x00000020
@@ -146,14 +151,95 @@ end
 function Nearby:OnCombatLogEvent()
     -- Skip all hostile tracking in sanctuary zones (Shattrath, etc.)
     if Deadpool:IsInSanctuary() then return end
-    -- Skip in battlegrounds/arenas (too much noise)
-    if Deadpool.modules.KillTracker and Deadpool.modules.KillTracker:IsInBGOrArena() then return end
+
+    local inInstance, instanceType = IsInInstance()
+    local inBG = inInstance and instanceType == "pvp"
+    local inArena = inInstance and instanceType == "arena"
+
+    -- Stealth detection: works in arenas (useful intel), skips BGs (too noisy)
+    if not inBG then
+        local _, subeventCheck = CombatLogGetCurrentEventInfo()
+        if subeventCheck and (subeventCheck == "SPELL_AURA_APPLIED" or subeventCheck == "SPELL_CAST_SUCCESS") then
+            local _, _, _, srcGUID, srcName, srcFlags = CombatLogGetCurrentEventInfo()
+            if srcGUID and srcGUID:sub(1, 6) == "Player"
+                and srcFlags and bit.band(srcFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0 then
+                local _, spellName = select(12, CombatLogGetCurrentEventInfo())
+                if spellName and (spellName == "Stealth" or spellName == "Prowl" or spellName == "Vanish"
+                    or spellName == "Shadowmeld") then
+                    if Deadpool.db.settings.stealthAlertEnabled ~= false then
+                        local fullName = Deadpool:NormalizeName(srcName)
+                        if fullName then
+                            local now = time()
+                            if not alertCooldowns["stealth_" .. fullName] or (now - alertCooldowns["stealth_" .. fullName]) >= 30 then
+                                alertCooldowns["stealth_" .. fullName] = now
+                                local class = Deadpool.modules.KillTracker:GetInfoFromGUID(srcGUID)
+                                local display = class and Deadpool:ClassColor(class, Deadpool:ShortName(fullName))
+                                    or Deadpool:ShortName(fullName)
+                                Deadpool:Print("|cFFFF66FFSTEALTH DETECTED!|r " .. display .. " |cFFFF66FFjust stealthed nearby!|r")
+                                local stealthSound = Deadpool.db.settings.stealthAlertSound
+                                if stealthSound and stealthSound ~= "none" then
+                                    Deadpool:PlaySoundByKey(stealthSound)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Skip everything else in BGs/arenas (tracking, aggression, PvP nearby, etc.)
+    if inBG or inArena then return end
 
     local _, subevent, _, sourceGUID, sourceName, sourceFlags, _,
           destGUID, destName, destFlags = CombatLogGetCurrentEventInfo()
 
     -- Only care about damage/kill events for aggression detection
     local isDamage = subevent and (subevent:find("_DAMAGE") or subevent == "SWING_DAMAGE" or subevent == "PARTY_KILL")
+
+    -- PvP Nearby Detection: alert when hostile vs friendly combat happening in range
+    -- Only fires for damage events, not buffs/heals
+    if isDamage and Deadpool.db.settings.pvpNearbyAlert ~= false then
+        local isHostileSource = sourceGUID and sourceGUID:sub(1, 6) == "Player"
+            and sourceFlags and bit.band(sourceFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0
+        local isFriendlyDest = destGUID and destGUID:sub(1, 6) == "Player"
+            and destFlags and bit.band(destFlags, COMBATLOG_OBJECT_REACTION_FRIENDLY) > 0
+        local isHostileDest = destGUID and destGUID:sub(1, 6) == "Player"
+            and destFlags and bit.band(destFlags, COMBATLOG_OBJECT_REACTION_HOSTILE) > 0
+        local isFriendlySource = sourceGUID and sourceGUID:sub(1, 6) == "Player"
+            and sourceFlags and bit.band(sourceFlags, COMBATLOG_OBJECT_REACTION_FRIENDLY) > 0
+
+        -- Hostile attacking friendly OR friendly attacking hostile = PvP nearby
+        if (isHostileSource and isFriendlyDest) or (isFriendlySource and isHostileDest) then
+            -- Skip if WE are involved (those have their own alerts)
+            local myName = UnitName("player")
+            local srcShort = sourceName and (sourceName:match("^(.-)%-") or sourceName)
+            local dstShort = destName and (destName:match("^(.-)%-") or destName)
+            if srcShort ~= myName and dstShort ~= myName then
+                local hostileName = isHostileSource and sourceName or destName
+                local gt = GetTime()
+                if hostileName then
+                    pvpNearbyCombatants[hostileName] = true
+                end
+                if (gt - pvpNearbyLastAlert) >= PVP_NEARBY_COOLDOWN then
+                    pvpNearbyLastAlert = gt
+                    local count = 0
+                    for _ in pairs(pvpNearbyCombatants) do count = count + 1 end
+                    local zone = Deadpool:GetSubZone()
+                    if not zone or zone == "" then zone = Deadpool:GetZone() end
+                    Deadpool:Print(Deadpool.colors.orange .. "PVP NEARBY!|r " ..
+                        Deadpool.colors.red .. count .. "|r hostile" .. (count > 1 and "s" or "") ..
+                        " fighting in " .. Deadpool.colors.yellow .. zone .. "|r")
+                    local pvpSound = Deadpool.db.settings.pvpNearbySound
+                    if pvpSound and pvpSound ~= "none" then
+                        Deadpool:PlaySoundByKey(pvpSound)
+                    end
+                    -- Reset combatant tracker for next window
+                    wipe(pvpNearbyCombatants)
+                end
+            end
+        end
+    end
 
     -- Check source: hostile player
     if sourceGUID and sourceName and sourceFlags then
@@ -175,26 +261,6 @@ function Nearby:OnCombatLogEvent()
                 if srcFull then cleuThrottle[srcFull] = gt end
                 class, race = Deadpool.modules.KillTracker:GetInfoFromGUID(sourceGUID)
                 self:TrackPlayer(sourceName, sourceGUID, class, race, nil, nil, isStealth)
-            end
-
-            -- Stealth alert (own 30s cooldown, respects stealthAlertEnabled setting)
-            if isStealth and Deadpool.db.settings.stealthAlertEnabled ~= false then
-                if srcFull then
-                    local now = time()
-                    if not alertCooldowns["stealth_" .. srcFull] or (now - alertCooldowns["stealth_" .. srcFull]) >= 30 then
-                        alertCooldowns["stealth_" .. srcFull] = now
-                        if not class then
-                            class, race = Deadpool.modules.KillTracker:GetInfoFromGUID(sourceGUID)
-                        end
-                        local display = class and Deadpool:ClassColor(class, Deadpool:ShortName(srcFull))
-                            or Deadpool:ShortName(srcFull)
-                        Deadpool:Print("|cFFFF66FFSTEALTH DETECTED!|r " .. display .. " |cFFFF66FFjust stealthed nearby!|r")
-                        local stealthSound = Deadpool.db.settings.stealthAlertSound
-                        if stealthSound and stealthSound ~= "none" then
-                            Deadpool:PlaySoundByKey(stealthSound)
-                        end
-                    end
-                end
             end
 
             -- Aggression detection (own ALERT_COOLDOWN, not throttled)

@@ -740,12 +740,16 @@ function Sync:HandleGMConfig(data, sender)
     end
 
     -- Check for scoreboard reset signal
+    -- Only show scary message if we actually HAD data (localTimestamp > 0)
+    -- On fresh sync (local = 0), silently accept the timestamp
     local remoteScoreReset = tonumber(parts[5]) or 0
     local localScoreReset = Deadpool.db.guildConfig.scoreboardResetAt or 0
     if remoteScoreReset > localScoreReset then
         Deadpool.db.guildConfig.scoreboardResetAt = remoteScoreReset
-        Deadpool.db.scoreboard = {}
-        Deadpool:Print(Deadpool.colors.red .. "Scoreboard reset by GM — scores wiped.|r")
+        if localScoreReset > 0 then
+            Deadpool.db.scoreboard = {}
+            Deadpool:Print(Deadpool.colors.red .. "Scoreboard reset by GM — scores wiped.|r")
+        end
     end
 
     -- Check for kill log reset signal
@@ -753,9 +757,11 @@ function Sync:HandleGMConfig(data, sender)
     local localKillReset = Deadpool.db.guildConfig.killLogResetAt or 0
     if remoteKillReset > localKillReset then
         Deadpool.db.guildConfig.killLogResetAt = remoteKillReset
-        Deadpool.db.killLog = {}
-        Deadpool.db.deathLog = {}
-        Deadpool:Print(Deadpool.colors.red .. "Kill log reset by GM — logs wiped.|r")
+        if localKillReset > 0 then
+            Deadpool.db.killLog = {}
+            Deadpool.db.deathLog = {}
+            Deadpool:Print(Deadpool.colors.red .. "Kill log reset by GM — logs wiped.|r")
+        end
     end
 
     -- Check for KOS list purge signal
@@ -763,10 +769,12 @@ function Sync:HandleGMConfig(data, sender)
     local localKOSReset = Deadpool.db.guildConfig.kosResetAt or 0
     if remoteKOSReset > localKOSReset then
         Deadpool.db.guildConfig.kosResetAt = remoteKOSReset
-        for fullName in pairs(Deadpool.db.kosList) do
-            Deadpool.db.kosList[fullName] = nil
+        if localKOSReset > 0 then
+            for fullName in pairs(Deadpool.db.kosList) do
+                Deadpool.db.kosList[fullName] = nil
+            end
+            Deadpool:Print(Deadpool.colors.red .. "KOS list purged by officer.|r")
         end
-        Deadpool:Print(Deadpool.colors.red .. "KOS list purged by officer.|r")
     end
 
     local senderShort = sender:match("^(.-)%-") or sender

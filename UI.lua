@@ -2630,7 +2630,8 @@ function UI:BuildSettingsPanel()
     SoundRow("Party Death", "partyDeathSound", ly); ly = ly - 26
     SoundRow("Party Attack", "partyAttackSound", ly); ly = ly - 26
     SoundRow("KOS Alert", "kosAlertSound", ly); ly = ly - 26
-    SoundRow("Stealth", "stealthAlertSound", ly); ly = ly - 30
+    SoundRow("Stealth", "stealthAlertSound", ly); ly = ly - 26
+    SoundRow("PvP Nearby", "pvpNearbySound", ly); ly = ly - 30
 
     -- Custom sound: add from Sounds folder
     local csHeader = content:CreateFontString(nil, "OVERLAY")
@@ -2679,7 +2680,8 @@ function UI:BuildSettingsPanel()
     -- NEARBY WIDGET
     Header("NEARBY WIDGET", 0, ly); ly = ly - 24
     Check("Show nearby enemy tracker", "nearbyEnabled", 0, ly); ly = ly - 22
-    Check("Stealth detection alerts", "stealthAlertEnabled", 0, ly); ly = ly - 26
+    Check("Stealth detection alerts", "stealthAlertEnabled", 0, ly); ly = ly - 22
+    Check("PvP nearby alerts", "pvpNearbyAlert", 0, ly); ly = ly - 26
 
     -- ========================
     -- RIGHT COLUMN
