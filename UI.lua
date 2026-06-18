@@ -731,15 +731,31 @@ function UI:RefreshContent()
         return
     end
 
+    -- Arena tab is fully owned by the ArenaAnalytics module — hide
+    -- everything else and let AA render itself in the same region.
+    if activeTab == "arena" then
+        if filterBar then filterBar:Hide() end
+        if dashboardFrame then dashboardFrame:Hide() end
+        if UI.settingsPanel then UI.settingsPanel:Hide() end
+        if UI.questsPanel then UI.questsPanel:Hide() end
+        if UI.achievementsPanel then UI.achievementsPanel:Hide() end
+        if contentArea then contentArea:Hide() end
+        local AA = Deadpool.modules.ArenaAnalytics
+        if AA and AA.Show then AA:Show() end
+        return
+    end
+
     if dashboardFrame then dashboardFrame:Hide() end
     if UI.settingsPanel then UI.settingsPanel:Hide() end
     if UI.questsPanel then UI.questsPanel:Hide() end
     if UI.achievementsPanel then UI.achievementsPanel:Hide() end
+    -- Hide arena analytics panel when on other tabs
+    local AA = Deadpool.modules.ArenaAnalytics
+    if AA and AA.Hide then AA:Hide() end
 
     -- Filter bar: show only on filterable tabs, reposition content accordingly
-    local showFilter = (activeTab == "kos" or activeTab == "arena"
-        or activeTab == "killlog")
-    -- Show Mine button: only on kill log (arena is already per-character)
+    local showFilter = (activeTab == "kos" or activeTab == "killlog")
+    -- Show Mine button: only on kill log
     local showMine = (activeTab == "killlog")
     if filterBar then
         if showFilter then
@@ -795,6 +811,13 @@ function UI:UpdateBanner()
     b.stat2:SetText("")
     b.stat3:SetText("")
 
+    -- Hide arena launcher unless on arena tab
+    if b._aaLauncher and activeTab ~= "arena" then
+        b._aaLauncher:Hide()
+        if b.stat2 then b.stat2:ClearAllPoints(); b.stat2:SetPoint("RIGHT", -50, 4) end
+        if b.stat3 then b.stat3:ClearAllPoints(); b.stat3:SetPoint("RIGHT", -50, -10) end
+    end
+
     if activeTab == "kos" then
         local count = Deadpool:GetKOSCount()
         local topTarget, topKills = nil, 0
@@ -821,6 +844,43 @@ function UI:UpdateBanner()
             b.stat2:SetText("Peak rating")
             b.stat3:SetText(accentHex .. best .. "|r")
         end
+        -- Arena Analytics launcher button (lives on the banner, lazy-created)
+        if not b._aaLauncher then
+            local TM2 = Deadpool.modules.Theme
+            local t2 = TM2.active
+            local btn = CreateFrame("Button", nil, b, "BackdropTemplate")
+            btn:SetSize(170, 24)
+            btn:SetPoint("RIGHT", -10, 0)
+            btn:SetBackdrop({
+                bgFile   = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = 1,
+            })
+            btn:SetBackdropColor(t2.accent[1] * 0.55, t2.accent[2] * 0.55, t2.accent[3] * 0.55, 0.95)
+            btn:SetBackdropBorderColor(t2.accent[1], t2.accent[2], t2.accent[3], 1)
+            btn._txt = btn:CreateFontString(nil, "OVERLAY")
+            btn._txt:SetFont(TM2:GetFont(11, "OUTLINE"))
+            btn._txt:SetPoint("CENTER")
+            btn._txt:SetText("OPEN ARENA ANALYTICS  >")
+            btn._txt:SetTextColor(1, 1, 1)
+            btn:SetScript("OnEnter", function(self)
+                self:SetBackdropColor(t2.accent[1] * 0.8, t2.accent[2] * 0.8, t2.accent[3] * 0.8, 1)
+                GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+                GameTooltip:AddLine("Open the full Arena Analytics popout", 1, 1, 1)
+                GameTooltip:AddLine("Filters, comp builder, scoreboards, search", 0.7, 0.7, 0.7)
+                GameTooltip:AddLine("Shortcut: /aa", 0.5, 0.5, 0.5)
+                GameTooltip:Show()
+            end)
+            btn:SetScript("OnLeave", function(self)
+                self:SetBackdropColor(t2.accent[1] * 0.55, t2.accent[2] * 0.55, t2.accent[3] * 0.55, 0.95)
+                GameTooltip:Hide()
+            end)
+            btn:SetScript("OnClick", function() Deadpool:ShowArenaAnalytics() end)
+            b._aaLauncher = btn
+        end
+        if b._aaLauncher then b._aaLauncher:Show() end
+        if b.stat2 then b.stat2:ClearAllPoints(); b.stat2:SetPoint("RIGHT", b._aaLauncher, "LEFT", -12, 4) end
+        if b.stat3 then b.stat3:ClearAllPoints(); b.stat3:SetPoint("RIGHT", b._aaLauncher, "LEFT", -12, -10) end
 
     elseif activeTab == "enemies" then
         local kills, deaths = 0, 0
@@ -880,11 +940,11 @@ function UI:RenderCurrentTab()
     end
 
     if activeTab == "kos" then self:RenderKOSList()
-    elseif activeTab == "arena" then self:RenderArena()
     elseif activeTab == "scoreboard" then self:RenderScoreboard()
     elseif activeTab == "mystats" then self:RenderMyStats()
     elseif activeTab == "killlog" then self:RenderKillLog()
     end
+    -- Arena tab is handled by ArenaAnalytics module (see RefreshContent)
 
     -- Update scrollbar range
     if contentArea.scrollBar then
@@ -2682,6 +2742,380 @@ function UI:BuildSettingsPanel()
     Check("Show nearby enemy tracker", "nearbyEnabled", 0, ly); ly = ly - 22
     Check("Stealth detection alerts", "stealthAlertEnabled", 0, ly); ly = ly - 22
     Check("PvP nearby alerts", "pvpNearbyAlert", 0, ly); ly = ly - 26
+
+    -- CC TRACKER
+    Header("CC TRACKER", 0, ly); ly = ly - 24
+
+    -- Enable checkbox: wired to module so frame is created/destroyed live
+    do
+        local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", 8, ly)
+        cb:SetSize(24, 24)
+        cb:SetChecked(Deadpool.db.settings.ccTrackerEnabled and true or false)
+        cb:SetScript("OnClick", function(self)
+            local on = self:GetChecked() and true or false
+            local mod = Deadpool.modules.CCTracker
+            if mod then mod:SetEnabled(on)
+            else Deadpool.db.settings.ccTrackerEnabled = on end
+        end)
+        local lbl = content:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(12, ""))
+        lbl:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+        lbl:SetText("Enable CC tracker (large icon + timer)")
+        lbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        UI.settingsPanel._checkboxes["ccTrackerEnabled"] = cb
+        ly = ly - 26
+    end
+
+    -- Lock position checkbox
+    do
+        local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", 8, ly)
+        cb:SetSize(24, 24)
+        cb:SetChecked(Deadpool.db.settings.ccTrackerLocked and true or false)
+        cb:SetScript("OnClick", function(self)
+            local on = self:GetChecked() and true or false
+            local mod = Deadpool.modules.CCTracker
+            if mod then mod:SetLocked(on)
+            else Deadpool.db.settings.ccTrackerLocked = on end
+        end)
+        local lbl = content:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(12, ""))
+        lbl:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+        lbl:SetText("Lock position (prevent drag)")
+        lbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        UI.settingsPanel._checkboxes["ccTrackerLocked"] = cb
+        ly = ly - 26
+    end
+
+    -- Icon size slider
+    do
+        local sliderLbl = content:CreateFontString(nil, "OVERLAY")
+        sliderLbl:SetFont(TM:GetFont(11, ""))
+        sliderLbl:SetPoint("TOPLEFT", content, "TOPLEFT", 16, ly)
+        sliderLbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+        sliderLbl:SetText("Icon size")
+
+        local valTxt = content:CreateFontString(nil, "OVERLAY")
+        valTxt:SetFont(TM:GetFont(11, ""))
+        valTxt:SetPoint("LEFT", sliderLbl, "RIGHT", 8, 0)
+        valTxt:SetTextColor(t.text[1], t.text[2], t.text[3])
+        valTxt:SetText((Deadpool.db.settings.ccTrackerSize or 96) .. " px")
+        ly = ly - 14
+
+        local slider = CreateFrame("Slider", nil, content, "OptionsSliderTemplate")
+        slider:SetPoint("TOPLEFT", content, "TOPLEFT", 16, ly)
+        slider:SetSize(220, 16)
+        slider:SetMinMaxValues(40, 220)
+        slider:SetValueStep(4)
+        slider:SetObeyStepOnDrag(true)
+        slider:SetValue(Deadpool.db.settings.ccTrackerSize or 96)
+        if slider.Low  then slider.Low:SetText("40")  end
+        if slider.High then slider.High:SetText("220") end
+        slider:SetScript("OnValueChanged", function(self, value)
+            value = math.floor(value / 4 + 0.5) * 4
+            local mod = Deadpool.modules.CCTracker
+            if mod then mod:SetSize(value)
+            else Deadpool.db.settings.ccTrackerSize = value end
+            valTxt:SetText(value .. " px")
+        end)
+        ly = ly - 30
+    end
+
+    -- Action buttons: Preview + Reset Position
+    do
+        local previewBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        previewBtn:SetSize(110, 22)
+        previewBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 10, ly)
+        previewBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        previewBtn:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+        previewBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+        local pLbl = previewBtn:CreateFontString(nil, "OVERLAY")
+        pLbl:SetFont(TM:GetFont(11, "")); pLbl:SetPoint("CENTER")
+        pLbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        local function updateLbl()
+            local mod = Deadpool.modules.CCTracker
+            pLbl:SetText((mod and mod.preview) and "Stop Preview" or "Preview")
+        end
+        updateLbl()
+        previewBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(t.accent[1]*0.5, t.accent[2]*0.5, t.accent[3]*0.5, 1)
+        end)
+        previewBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+        end)
+        previewBtn:SetScript("OnClick", function()
+            local mod = Deadpool.modules.CCTracker
+            if not mod then return end
+            local on = not mod.preview
+            -- Auto-enable when previewing for the first time
+            if on and not Deadpool.db.settings.ccTrackerEnabled then
+                mod:SetEnabled(true)
+                if UI.settingsPanel._checkboxes["ccTrackerEnabled"] then
+                    UI.settingsPanel._checkboxes["ccTrackerEnabled"]:SetChecked(true)
+                end
+            end
+            mod:SetPreview(on)
+            updateLbl()
+        end)
+
+        local resetBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        resetBtn:SetSize(110, 22)
+        resetBtn:SetPoint("LEFT", previewBtn, "RIGHT", 8, 0)
+        resetBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        resetBtn:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+        resetBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+        local rLbl = resetBtn:CreateFontString(nil, "OVERLAY")
+        rLbl:SetFont(TM:GetFont(11, "")); rLbl:SetPoint("CENTER")
+        rLbl:SetText("Reset Position"); rLbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        resetBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(t.accent[1]*0.5, t.accent[2]*0.5, t.accent[3]*0.5, 1)
+        end)
+        resetBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+        end)
+        resetBtn:SetScript("OnClick", function()
+            Deadpool.db.settings.ccTrackerPos = nil
+            local mod = Deadpool.modules.CCTracker
+            if mod and mod.frame then
+                mod.frame:ClearAllPoints()
+                mod.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+            end
+            Deadpool:Print("CC Tracker position reset.")
+        end)
+        ly = ly - 30
+    end
+
+    -- Help hint
+    do
+        local hint = content:CreateFontString(nil, "OVERLAY")
+        hint:SetFont(TM:GetFont(10, ""))
+        hint:SetPoint("TOPLEFT", content, "TOPLEFT", 16, ly)
+        hint:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+        hint:SetText("Drag the icon to reposition when unlocked. Trinket badge shows escape readiness.")
+        ly = ly - 22
+    end
+
+    -- DR TRACKER
+    Header("DR TRACKER", 0, ly); ly = ly - 24
+
+    -- Enable
+    do
+        local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", 8, ly)
+        cb:SetSize(24, 24)
+        cb:SetChecked(Deadpool.db.settings.drTrackerEnabled and true or false)
+        cb:SetScript("OnClick", function(self)
+            local on = self:GetChecked() and true or false
+            local mod = Deadpool.modules.DRTracker
+            if mod then mod:SetEnabled(on)
+            else Deadpool.db.settings.drTrackerEnabled = on end
+        end)
+        local lbl = content:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(12, ""))
+        lbl:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+        lbl:SetText("Enable DR tracker (per-enemy diminishing returns)")
+        lbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        UI.settingsPanel._checkboxes["drTrackerEnabled"] = cb
+        ly = ly - 26
+    end
+
+    -- Lock
+    do
+        local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", 8, ly)
+        cb:SetSize(24, 24)
+        cb:SetChecked(Deadpool.db.settings.drTrackerLocked and true or false)
+        cb:SetScript("OnClick", function(self)
+            local on = self:GetChecked() and true or false
+            local mod = Deadpool.modules.DRTracker
+            if mod then mod:SetLocked(on)
+            else Deadpool.db.settings.drTrackerLocked = on end
+        end)
+        local lbl = content:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(12, ""))
+        lbl:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+        lbl:SetText("Lock position (prevent drag)")
+        lbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        UI.settingsPanel._checkboxes["drTrackerLocked"] = cb
+        ly = ly - 26
+    end
+
+    -- Party-only filter
+    do
+        local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", 8, ly)
+        cb:SetSize(24, 24)
+        cb:SetChecked(Deadpool.db.settings.drTrackerPartyOnly and true or false)
+        cb:SetScript("OnClick", function(self)
+            Deadpool.db.settings.drTrackerPartyOnly = self:GetChecked() and true or false
+        end)
+        local lbl = content:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(12, ""))
+        lbl:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+        lbl:SetText("Only track CCs cast by me or my party")
+        lbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        UI.settingsPanel._checkboxes["drTrackerPartyOnly"] = cb
+        ly = ly - 26
+    end
+
+    -- Context toggles: Arena / BG / Party
+    do
+        local ctxLbl = content:CreateFontString(nil, "OVERLAY")
+        ctxLbl:SetFont(TM:GetFont(10, ""))
+        ctxLbl:SetPoint("TOPLEFT", content, "TOPLEFT", 16, ly)
+        ctxLbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+        ctxLbl:SetText("Show in:")
+        ly = ly - 16
+
+        local function ctxCheck(label, key, x)
+            local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+            cb:SetPoint("TOPLEFT", content, "TOPLEFT", x, ly)
+            cb:SetSize(20, 20)
+            cb:SetChecked(Deadpool.db.settings[key] and true or false)
+            cb:SetScript("OnClick", function(self)
+                Deadpool.db.settings[key] = self:GetChecked() and true or false
+            end)
+            local txt = content:CreateFontString(nil, "OVERLAY")
+            txt:SetFont(TM:GetFont(11, ""))
+            txt:SetPoint("LEFT", cb, "RIGHT", 4, 0)
+            txt:SetText(label)
+            txt:SetTextColor(t.text[1], t.text[2], t.text[3])
+            UI.settingsPanel._checkboxes[key] = cb
+            return cb, txt
+        end
+
+        ctxCheck("Arena",        "drTrackerInArena", 16)
+        ctxCheck("Battlegrounds (me only)", "drTrackerInBG",    100)
+        ctxCheck("Party",        "drTrackerInParty", 280)
+        ly = ly - 26
+    end
+
+    -- Announce DR resets to party chat
+    do
+        local cb = CreateFrame("CheckButton", nil, content, "UICheckButtonTemplate")
+        cb:SetPoint("TOPLEFT", content, "TOPLEFT", 8, ly)
+        cb:SetSize(24, 24)
+        cb:SetChecked(Deadpool.db.settings.drTrackerAnnounce and true or false)
+        cb:SetScript("OnClick", function(self)
+            Deadpool.db.settings.drTrackerAnnounce = self:GetChecked() and true or false
+        end)
+        local lbl = content:CreateFontString(nil, "OVERLAY")
+        lbl:SetFont(TM:GetFont(12, ""))
+        lbl:SetPoint("LEFT", cb, "RIGHT", 6, 0)
+        lbl:SetText("Announce DR resets in party chat")
+        lbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        UI.settingsPanel._checkboxes["drTrackerAnnounce"] = cb
+        ly = ly - 26
+    end
+
+    -- Scale slider
+    do
+        local sliderLbl = content:CreateFontString(nil, "OVERLAY")
+        sliderLbl:SetFont(TM:GetFont(11, ""))
+        sliderLbl:SetPoint("TOPLEFT", content, "TOPLEFT", 16, ly)
+        sliderLbl:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+        sliderLbl:SetText("Scale")
+
+        local valTxt = content:CreateFontString(nil, "OVERLAY")
+        valTxt:SetFont(TM:GetFont(11, ""))
+        valTxt:SetPoint("LEFT", sliderLbl, "RIGHT", 8, 0)
+        valTxt:SetTextColor(t.text[1], t.text[2], t.text[3])
+        local curScale = Deadpool.db.settings.drTrackerScale or 1.0
+        valTxt:SetText(math.floor(curScale * 100) .. "%")
+        ly = ly - 14
+
+        local slider = CreateFrame("Slider", nil, content, "OptionsSliderTemplate")
+        slider:SetPoint("TOPLEFT", content, "TOPLEFT", 16, ly)
+        slider:SetSize(220, 16)
+        slider:SetMinMaxValues(0.5, 2.0)
+        slider:SetValueStep(0.05)
+        slider:SetObeyStepOnDrag(true)
+        slider:SetValue(curScale)
+        if slider.Low  then slider.Low:SetText("50%")  end
+        if slider.High then slider.High:SetText("200%") end
+        slider:SetScript("OnValueChanged", function(self, value)
+            value = math.floor(value * 20 + 0.5) / 20
+            local mod = Deadpool.modules.DRTracker
+            if mod then mod:SetScale(value)
+            else Deadpool.db.settings.drTrackerScale = value end
+            valTxt:SetText(math.floor(value * 100) .. "%")
+        end)
+        ly = ly - 30
+    end
+
+    -- Action buttons
+    do
+        local previewBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        previewBtn:SetSize(110, 22)
+        previewBtn:SetPoint("TOPLEFT", content, "TOPLEFT", 10, ly)
+        previewBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        previewBtn:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+        previewBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+        local pLbl = previewBtn:CreateFontString(nil, "OVERLAY")
+        pLbl:SetFont(TM:GetFont(11, "")); pLbl:SetPoint("CENTER")
+        pLbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        local function updateLbl()
+            local mod = Deadpool.modules.DRTracker
+            pLbl:SetText((mod and mod.preview) and "Stop Preview" or "Preview")
+        end
+        updateLbl()
+        previewBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(t.accent[1]*0.5, t.accent[2]*0.5, t.accent[3]*0.5, 1)
+        end)
+        previewBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+        end)
+        previewBtn:SetScript("OnClick", function()
+            local mod = Deadpool.modules.DRTracker
+            if not mod then return end
+            local on = not mod.preview
+            if on and not Deadpool.db.settings.drTrackerEnabled then
+                mod:SetEnabled(true)
+                if UI.settingsPanel._checkboxes["drTrackerEnabled"] then
+                    UI.settingsPanel._checkboxes["drTrackerEnabled"]:SetChecked(true)
+                end
+            end
+            mod:SetPreview(on)
+            updateLbl()
+        end)
+
+        local resetBtn = CreateFrame("Button", nil, content, "BackdropTemplate")
+        resetBtn:SetSize(110, 22)
+        resetBtn:SetPoint("LEFT", previewBtn, "RIGHT", 8, 0)
+        resetBtn:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8x8",edgeFile="Interface\\Buttons\\WHITE8x8",edgeSize=1})
+        resetBtn:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+        resetBtn:SetBackdropBorderColor(t.accent[1], t.accent[2], t.accent[3], 0.6)
+        local rLbl = resetBtn:CreateFontString(nil, "OVERLAY")
+        rLbl:SetFont(TM:GetFont(11, "")); rLbl:SetPoint("CENTER")
+        rLbl:SetText("Reset Position"); rLbl:SetTextColor(t.text[1], t.text[2], t.text[3])
+        resetBtn:SetScript("OnEnter", function(self)
+            self:SetBackdropColor(t.accent[1]*0.5, t.accent[2]*0.5, t.accent[3]*0.5, 1)
+        end)
+        resetBtn:SetScript("OnLeave", function(self)
+            self:SetBackdropColor(t.accent[1]*0.3, t.accent[2]*0.3, t.accent[3]*0.3, 0.9)
+        end)
+        resetBtn:SetScript("OnClick", function()
+            Deadpool.db.settings.drTrackerPos = nil
+            local mod = Deadpool.modules.DRTracker
+            if mod and mod.frame then
+                mod.frame:ClearAllPoints()
+                mod.frame:SetPoint("CENTER", UIParent, "CENTER", 280, 0)
+            end
+            Deadpool:Print("DR Tracker position reset.")
+        end)
+        ly = ly - 30
+    end
+
+    -- Help hint
+    do
+        local hint = content:CreateFontString(nil, "OVERLAY")
+        hint:SetFont(TM:GetFont(10, ""))
+        hint:SetPoint("TOPLEFT", content, "TOPLEFT", 16, ly)
+        hint:SetTextColor(t.textDim[1], t.textDim[2], t.textDim[3])
+        hint:SetText("Bar shrinks until the DR resets (15s after the aura ends).")
+        ly = ly - 22
+    end
 
     -- ========================
     -- RIGHT COLUMN

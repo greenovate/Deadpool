@@ -45,7 +45,7 @@ end
 -- Arena Match Tracker (local only — no sync)
 -- Records every arena match: bracket, result, rating, full scoreboard
 ----------------------------------------------------------------------
-local arenaState = { inArena = false, recorded = false, enterTime = 0 }
+local arenaState = { inArena = false, recorded = false, enterTime = 0, isRated = false }
 
 function KillTracker:InitArenaTracker()
     -- Detect arena entry
@@ -56,7 +56,13 @@ function KillTracker:InitArenaTracker()
                 arenaState.inArena = true
                 arenaState.recorded = false
                 arenaState.enterTime = time()
-                Deadpool:Debug("Arena entered")
+                -- Detect rated vs skirmish (IsActiveBattlefieldArena returns isArena, isRated)
+                arenaState.isRated = false
+                if IsActiveBattlefieldArena then
+                    local ok, _, rated = pcall(IsActiveBattlefieldArena)
+                    if ok then arenaState.isRated = rated and true or false end
+                end
+                Deadpool:Debug("Arena entered (" .. (arenaState.isRated and "RATED" or "SKIRMISH") .. ")")
             end
         else
             if arenaState.inArena then
@@ -119,43 +125,115 @@ function KillTracker:CaptureArenaResult()
     local myTeam = nil
     local scores = {}
 
+    -- Rating fields harvested off the player's row (TBC arena appends them
+    -- after damage/healing — that's why the old "last two numbers" assumption
+    -- gave us junk for damage/heal and showed ~1500 for everyone).
+    local playerRowFields = nil
+
     for i = 1, numScores do
-        -- TBC Anniversary: GetBattlefieldScore returns vary (may include rank field)
-        -- Safe approach: grab known positions + damage/healing from the end
+        -- TBC arena GetBattlefieldScore layout (after extensive testing):
+        --   1=name, 2=killingBlows, 3=honorableKills, 4=deaths,
+        --   5=honorGained, 6=faction, 7=rank, 8=race(localized),
+        --   9=class(localized), 10=classToken(UPPER), 11=damageDone, 12=healingDone,
+        --   13+ = rating/MMR/ratingChange (varies by build)
+        -- The class fields can shift by ±1 depending on rank presence, so
+        -- anchor on classToken (the only ALL-CAPS string ≥4 chars in the row)
+        -- and read damage/healing as classToken+1, classToken+2.
         local fields = { GetBattlefieldScore(i) }
         local name = fields[1]
         if name then
             local shortName = name:match("^(.-)%-") or name
             local numFields = #fields
-            -- Damage and healing are ALWAYS the last two numbers
-            local healingDone = tonumber(fields[numFields]) or 0
-            local damageDone = tonumber(fields[numFields - 1]) or 0
-            -- killingBlows is always field 2, deaths is field 4, faction is field 6
+
             local killingBlows = tonumber(fields[2]) or 0
-            local deaths = tonumber(fields[4]) or 0
-            local faction = tonumber(fields[6]) or 0
-            -- classToken: scan backwards from damage for the uppercase class string
+            local deaths       = tonumber(fields[4]) or 0
+            local faction      = tonumber(fields[6]) or 0
+
+            -- Locate classToken (scan forward from field 7; first uppercase token wins)
+            local classTokenIdx = nil
             local classToken = nil
-            for fi = numFields - 2, 7, -1 do
+            for fi = 7, math.min(numFields, 14) do
                 local v = fields[fi]
-                if type(v) == "string" and v:match("^%u+$") and #v >= 4 then
+                if type(v) == "string" and v:match("^%u[%u_]+$") and #v >= 4 then
                     classToken = v
+                    classTokenIdx = fi
                     break
                 end
             end
 
+            -- Damage / healing live immediately after classToken
+            local damageDone, healingDone = 0, 0
+            if classTokenIdx then
+                damageDone  = tonumber(fields[classTokenIdx + 1]) or 0
+                healingDone = tonumber(fields[classTokenIdx + 2]) or 0
+            end
+
+            -- Fallback: if we didn't find a classToken (shouldn't happen),
+            -- pick the two largest numeric fields after position 6 — damage
+            -- and healing in arena are reliably the biggest numbers in the row
+            -- (ratings cap ~3000, dmg/heal range 10k–500k+).
+            if (damageDone == 0 and healingDone == 0) or not classTokenIdx then
+                local nums = {}
+                for fi = 7, numFields do
+                    local n = tonumber(fields[fi])
+                    if n and n >= 5000 then nums[#nums + 1] = { idx = fi, v = n } end
+                end
+                table.sort(nums, function(a, b) return a.v > b.v end)
+                if nums[1] then
+                    -- Pair them by index order so dmg comes before heal positionally
+                    local pair = { nums[1], nums[2] }
+                    if pair[2] and pair[1].idx > pair[2].idx then
+                        pair[1], pair[2] = pair[2], pair[1]
+                    end
+                    damageDone  = pair[1] and pair[1].v or damageDone
+                    healingDone = pair[2] and pair[2].v or healingDone
+                end
+            end
+
+            -- Per-player rating / rating change extraction from trailing fields.
+            -- After dmg/heal come the rating fields. We look for any number in
+            -- the 1000-3500 range (plausible rating window) and the small
+            -- signed delta that lives next to it (-50..+50).
+            local pRating, pRatingChange = 0, nil
+            do
+                local ratings = {}
+                local deltas = {}
+                local scanStart = (classTokenIdx and classTokenIdx + 3) or 13
+                for fi = scanStart, numFields do
+                    local n = tonumber(fields[fi])
+                    if n then
+                        if n >= 1000 and n <= 3500 then
+                            ratings[#ratings + 1] = { idx = fi, v = n }
+                        elseif n >= -100 and n <= 100 and n ~= 0 then
+                            deltas[#deltas + 1] = { idx = fi, v = n }
+                        end
+                    end
+                end
+                if #ratings > 0 then
+                    -- Take the last rating in the row as post-match rating
+                    pRating = ratings[#ratings].v
+                end
+                if #deltas > 0 then
+                    -- The rating change is the small signed number nearest the rating
+                    pRatingChange = deltas[#deltas].v
+                end
+            end
+
             scores[#scores + 1] = {
-                name = shortName,
-                fullName = name,
-                class = classToken,
-                kills = killingBlows,
-                deaths = deaths,
-                damage = damageDone,
-                healing = healingDone,
-                faction = faction,
+                name         = shortName,
+                fullName     = name,
+                class        = classToken,
+                kills        = killingBlows,
+                deaths       = deaths,
+                damage       = damageDone,
+                healing      = healingDone,
+                faction      = faction,
+                rating       = pRating,
+                ratingChange = pRatingChange,
             }
             if shortName == myName or name == myName then
                 myTeam = faction
+                playerRowFields = fields
             end
         end
     end
@@ -191,90 +269,111 @@ function KillTracker:CaptureArenaResult()
     -- Rating: try multiple APIs (TBC Anniversary varies)
     local oldRating, newRating = 0, 0
 
+    -- Method 0: pull rating off the player's row trailing fields.
+    -- After classToken, dmg, heal come the rating fields. Pick the two
+    -- numbers in the 1000-3500 range — those are the personal/team rating
+    -- and pre-match rating. Ratings change (-50..+50) lives between them.
+    if playerRowFields then
+        local ratings = {}
+        for fi = 11, #playerRowFields do
+            local n = tonumber(playerRowFields[fi])
+            -- Plausible rating window
+            if n and n >= 1000 and n <= 3500 then
+                ratings[#ratings + 1] = { idx = fi, v = n }
+            end
+        end
+        -- Heuristic: if we got at least two rating-shaped numbers, the
+        -- later one in the row is the post-match rating.
+        if #ratings >= 2 then
+            -- Sort by row position to identify "before" vs "after"
+            table.sort(ratings, function(a, b) return a.idx < b.idx end)
+            -- Look for an adjacent small signed delta between them
+            oldRating = ratings[1].v
+            newRating = ratings[#ratings].v
+            -- Sanity: prefer pairs that are within +/- 80 of each other
+            for i = 1, #ratings - 1 do
+                local diff = math.abs(ratings[i].v - ratings[i + 1].v)
+                if diff <= 80 then
+                    oldRating = ratings[i].v
+                    newRating = ratings[i + 1].v
+                end
+            end
+        elseif #ratings == 1 then
+            newRating = ratings[1].v
+        end
+    end
+
     -- Method 1: GetBattlefieldTeamInfo (0-indexed and 1-indexed)
-    if GetBattlefieldTeamInfo then
+    if (oldRating == 0 or newRating == 0) and GetBattlefieldTeamInfo then
         for teamIdx = 0, 2 do
             local ok, r1, r2, r3, r4 = pcall(GetBattlefieldTeamInfo, teamIdx)
             if ok then
                 Deadpool:Debug("TeamInfo[" .. teamIdx .. "]: " .. tostring(r1) .. ", " .. tostring(r2) .. ", " .. tostring(r3) .. ", " .. tostring(r4))
-                -- r1=teamName, r2=oldRating, r3=newRating OR r1=oldRating, r2=newRating
                 if type(r1) == "number" and type(r2) == "number" then
-                    -- No team name, just ratings
                     if teamIdx == myTeam or teamIdx == myTeam + 1 then
-                        oldRating = r1; newRating = r2
+                        if oldRating == 0 then oldRating = r1 end
+                        if newRating == 0 then newRating = r2 end
                     end
                 elseif type(r2) == "number" and type(r3) == "number" then
                     if teamIdx == myTeam or teamIdx == myTeam + 1 then
-                        oldRating = r2; newRating = r3
+                        if oldRating == 0 then oldRating = r2 end
+                        if newRating == 0 then newRating = r3 end
                     end
-                end
-            end
-        end
-    end
-
-    -- Method 2: GetBattlefieldArenaFaction + direct index
-    if oldRating == 0 and newRating == 0 and GetBattlefieldArenaFaction then
-        local ok, faction = pcall(GetBattlefieldArenaFaction)
-        if ok and faction then
-            Deadpool:Debug("ArenaFaction: " .. tostring(faction))
-        end
-    end
-
-    -- Method 3: Check scoreboard for rating columns via GetBattlefieldScore
-    -- Some TBC builds include personalRating in the return
-    if oldRating == 0 and newRating == 0 then
-        for i = 1, numScores do
-            local fields = { GetBattlefieldScore(i) }
-            local name = fields[1]
-            if name then
-                local shortName = name:match("^(.-)%-") or name
-                if shortName == UnitName("player") then
-                    -- Dump all fields for debug
-                    local dump = {}
-                    for fi = 1, #fields do dump[fi] = tostring(fields[fi]) end
-                    Deadpool:Debug("MyScore fields: " .. table.concat(dump, " | "))
                 end
             end
         end
     end
 
     -- Method 4: GetPersonalRatedInfo (modern API)
-    if oldRating == 0 and newRating == 0 then
+    if newRating == 0 then
         if C_PvP and C_PvP.GetPersonalRatedInfo then
             local bracketIdx = (teamSize == 2) and 1 or (teamSize == 3) and 2 or 3
             local ok, info = pcall(C_PvP.GetPersonalRatedInfo, bracketIdx)
             if ok and info then
-                Deadpool:Debug("PersonalRatedInfo: " .. tostring(info.personalRating) .. " / " .. tostring(info.seasonBest))
                 newRating = info.personalRating or 0
             end
         elseif GetPersonalRatedInfo then
             local bracketIdx = (teamSize == 2) and 1 or (teamSize == 3) and 2 or 3
-            local ok, rating, seasonBest = pcall(GetPersonalRatedInfo, bracketIdx)
-            if ok and rating then
-                Deadpool:Debug("GetPersonalRatedInfo: " .. tostring(rating))
-                newRating = rating or 0
-            end
+            local ok, rating = pcall(GetPersonalRatedInfo, bracketIdx)
+            if ok and rating then newRating = rating or 0 end
         end
     end
 
     -- Get map name
+    -- IMPORTANT: GetBattlefieldStatus(i) returns info for every queued
+    -- battlefield slot, including BG queues like AV. If a BG was queued
+    -- while playing arena, we'd grab the wrong map. Filter for active
+    -- arena slots (teamSize > 0). Fall back to the current zone — we
+    -- only call this from inside an arena instance anyway.
     local mapName = ""
-    for i = 1, 3 do
-        local status, mName = GetBattlefieldStatus(i)
-        if mName and mName ~= "" then
+    for i = 1, GetMaxBattlefieldID and GetMaxBattlefieldID() or 3 do
+        local status, mName, _, _, _, slotTeamSize = GetBattlefieldStatus(i)
+        if status == "active" and (slotTeamSize or 0) > 0 and mName and mName ~= "" then
             mapName = mName
             break
         end
+    end
+    if mapName == "" then
+        -- Fallback: current zone text (we're inside the arena instance)
+        local zone = GetRealZoneText() or GetZoneText()
+        if zone and zone ~= "" then mapName = zone end
     end
 
     -- Duration
     local duration = time() - (arenaState.enterTime or time())
 
     -- Build entry
+    -- Re-check rated state in case we missed it on entry
+    if not arenaState.isRated and IsActiveBattlefieldArena then
+        local ok, _, rated = pcall(IsActiveBattlefieldArena)
+        if ok and rated then arenaState.isRated = true end
+    end
+
     local entry = {
         time = time(),
         bracket = bracket,
         won = won,
+        isRated = arenaState.isRated and true or false,
         oldRating = oldRating,
         newRating = newRating,
         team = team,
@@ -294,6 +393,9 @@ function KillTracker:CaptureArenaResult()
         table.remove(Deadpool.db.arenaLog)
     end
 
+    -- Stash the raw fields for /dp arenadebug to inspect post-match
+    Deadpool._lastArenaRawFields = playerRowFields
+
     -- Announce
     local result = won and (Deadpool.colors.green .. "WIN") or (Deadpool.colors.red .. "LOSS")
     local ratingStr = ""
@@ -304,7 +406,9 @@ function KillTracker:CaptureArenaResult()
         ratingStr = " " .. newRating .. " (" .. changeColor .. changeStr .. "|r)"
     end
     Deadpool:Print(result .. "|r " .. bracket .. ratingStr ..
-        "  " .. Deadpool.colors.grey .. myKills .. "/" .. myDeaths .. " K/D|r")
+        "  " .. Deadpool.colors.grey .. myKills .. "/" .. myDeaths .. " K/D  " ..
+        Deadpool.colors.orange .. (myDamage >= 1000 and string.format("%.1fk", myDamage/1000) or tostring(myDamage)) .. " dmg|r  " ..
+        Deadpool.colors.green .. (myHealing >= 1000 and string.format("%.1fk", myHealing/1000) or tostring(myHealing)) .. " heal|r")
 
     if Deadpool.RefreshUI then Deadpool:RefreshUI() end
 end

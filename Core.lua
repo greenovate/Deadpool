@@ -4,7 +4,7 @@
 ----------------------------------------------------------------------
 
 Deadpool = {}
-Deadpool.version = "2.0.2"
+Deadpool.version = "2.1.0"
 Deadpool.prefix = "DEADPOOL"
 Deadpool.modules = {}
 
@@ -474,6 +474,12 @@ end
 ----------------------------------------------------------------------
 SLASH_DEADPOOL1 = "/deadpool"
 SLASH_DEADPOOL2 = "/dp"
+
+-- Dedicated slash for Arena Analytics popout
+SLASH_DEADPOOLAA1 = "/aa"
+SLASH_DEADPOOLAA2 = "/arenaanalytics"
+SlashCmdList["DEADPOOLAA"] = function() Deadpool:ShowTab("arena") end
+
 SlashCmdList["DEADPOOL"] = function(msg)
     local cmd, rest = msg:match("^(%S*)%s*(.-)$")
     cmd = (cmd or ""):lower()
@@ -574,6 +580,141 @@ SlashCmdList["DEADPOOL"] = function(msg)
             else
                 Deadpool:Print("Usage: /dp war add|remove <guild name>")
             end
+        end
+    elseif cmd == "arena" or cmd == "aa" or cmd == "analytics" or cmd == "arenaanalytics" then
+        Deadpool:ShowTab("arena")
+    elseif cmd == "arenadebug" then
+        -- Dump GetBattlefieldScore fields so we can confirm dmg/heal/rating positions.
+        -- Works inside an arena, on the post-match scoreboard, or right after leaving.
+        local numScores = GetNumBattlefieldScores and GetNumBattlefieldScores() or 0
+        if numScores == 0 then
+            Deadpool:Print(Deadpool.colors.red .. "No battlefield scoreboard available.|r Run this inside or right after an arena.")
+        else
+            local myName = UnitName("player")
+            Deadpool:Print(Deadpool.colors.header .. "=== Arena Scoreboard Field Dump (" .. numScores .. " players) ===|r")
+            for i = 1, numScores do
+                local fields = { GetBattlefieldScore(i) }
+                local name = fields[1] or "?"
+                local shortName = name:match("^(.-)%-") or name
+                local marker = (shortName == myName) and (Deadpool.colors.cyan .. "[YOU] |r") or ""
+                Deadpool:Print(marker .. Deadpool.colors.yellow .. name .. "|r (" .. #fields .. " fields)")
+                local parts = {}
+                for fi = 1, #fields do
+                    parts[#parts + 1] = "[" .. fi .. "]=" .. tostring(fields[fi])
+                end
+                Deadpool:Print("  " .. Deadpool.colors.grey .. table.concat(parts, "  ") .. "|r")
+            end
+            if Deadpool._lastArenaRawFields then
+                Deadpool:Print(Deadpool.colors.header .. "Last captured player row:|r")
+                local parts = {}
+                for fi = 1, #Deadpool._lastArenaRawFields do
+                    parts[#parts + 1] = "[" .. fi .. "]=" .. tostring(Deadpool._lastArenaRawFields[fi])
+                end
+                Deadpool:Print("  " .. Deadpool.colors.grey .. table.concat(parts, "  ") .. "|r")
+            end
+        end
+    elseif cmd == "arenawipe" then
+        local n = #(Deadpool.db.arenaLog or {})
+        Deadpool.db.arenaLog = {}
+        Deadpool:Print(Deadpool.colors.red .. "Wiped " .. n .. " arena log entries.|r New matches will record with corrected dmg/heal.")
+        if Deadpool.RefreshUI then Deadpool:RefreshUI() end
+        if Deadpool.modules.ArenaAnalytics and Deadpool.modules.ArenaAnalytics.Refresh then
+            Deadpool.modules.ArenaAnalytics:Refresh()
+        end
+    elseif cmd == "arenaclean" then
+        -- Remove obvious BG names mistakenly recorded as arena maps.
+        local arenaMaps = {
+            ["Nagrand Arena"] = true,
+            ["Blade's Edge Arena"] = true,
+            ["Ruins of Lordaeron"] = true,
+            ["Dalaran Arena"] = true,
+            ["The Ring of Valor"] = true,
+            ["The Ring of Trials"] = true,
+        }
+        local fixed, removed = 0, 0
+        local cleaned = {}
+        for _, e in ipairs(Deadpool.db.arenaLog or {}) do
+            if e.map and e.map ~= "" and not arenaMaps[e.map] then
+                -- Map name is junk (a BG queue leaked in). Strip it; if the
+                -- whole entry looks like it was actually a BG (teamSize > 5
+                -- or no enemy faction split), drop it.
+                e.map = ""
+                fixed = fixed + 1
+            end
+            cleaned[#cleaned + 1] = e
+        end
+        Deadpool.db.arenaLog = cleaned
+        Deadpool:Print(Deadpool.colors.green .. "Arena cleanup:|r " .. fixed .. " entries had bad map names cleared, " .. removed .. " removed.")
+        if Deadpool.RefreshUI then Deadpool:RefreshUI() end
+        if Deadpool.modules.ArenaAnalytics and Deadpool.modules.ArenaAnalytics.Refresh then
+            Deadpool.modules.ArenaAnalytics:Refresh()
+        end
+    elseif cmd == "dr" then
+        local mod = Deadpool.modules.DRTracker
+        if not mod then Deadpool:Print("DRTracker module not loaded."); return end
+        local sub, arg = rest:match("^(%S*)%s*(.-)$")
+        sub = (sub or ""):lower()
+        if sub == "" or sub == "toggle" then
+            local on = not Deadpool.db.settings.drTrackerEnabled
+            mod:SetEnabled(on)
+            Deadpool:Print("DR Tracker: " .. (on and (Deadpool.colors.green .. "ENABLED|r") or (Deadpool.colors.red .. "DISABLED|r")))
+        elseif sub == "lock" then
+            local on = not Deadpool.db.settings.drTrackerLocked
+            mod:SetLocked(on)
+            Deadpool:Print("DR Tracker: " .. (on and "LOCKED" or "UNLOCKED"))
+        elseif sub == "preview" then
+            local on = not mod.preview
+            if on and not Deadpool.db.settings.drTrackerEnabled then mod:SetEnabled(true) end
+            mod:SetPreview(on)
+            Deadpool:Print("DR Tracker preview: " .. (on and "ON" or "OFF"))
+        elseif sub == "scale" then
+            local n = tonumber(arg)
+            if not n then Deadpool:Print("Usage: /dp dr scale <0.5-2.0>"); return end
+            mod:SetScale(n)
+            Deadpool:Print("DR Tracker scale: " .. n)
+        elseif sub == "reset" then
+            Deadpool.db.settings.drTrackerPos = nil
+            if mod.frame then
+                mod.frame:ClearAllPoints()
+                mod.frame:SetPoint("CENTER", UIParent, "CENTER", 280, 0)
+            end
+            Deadpool:Print("DR Tracker position reset.")
+        else
+            Deadpool:Print("Usage: /dp dr [toggle|lock|preview|scale <n>|reset]")
+        end
+    elseif cmd == "cc" then
+        local mod = Deadpool.modules.CCTracker
+        if not mod then Deadpool:Print("CCTracker module not loaded."); return end
+        local sub, arg = rest:match("^(%S*)%s*(.-)$")
+        sub = (sub or ""):lower()
+        if sub == "" or sub == "toggle" then
+            local on = not Deadpool.db.settings.ccTrackerEnabled
+            mod:SetEnabled(on)
+            Deadpool:Print("CC Tracker: " .. (on and (Deadpool.colors.green .. "ENABLED|r") or (Deadpool.colors.red .. "DISABLED|r")))
+        elseif sub == "lock" then
+            local on = not Deadpool.db.settings.ccTrackerLocked
+            mod:SetLocked(on)
+            Deadpool:Print("CC Tracker: " .. (on and "LOCKED" or "UNLOCKED"))
+        elseif sub == "preview" then
+            local on = not mod.preview
+            -- Auto-enable when previewing for the first time
+            if on and not Deadpool.db.settings.ccTrackerEnabled then mod:SetEnabled(true) end
+            mod:SetPreview(on)
+            Deadpool:Print("CC Tracker preview: " .. (on and "ON" or "OFF"))
+        elseif sub == "size" then
+            local n = tonumber(arg)
+            if not n then Deadpool:Print("Usage: /dp cc size <40-220>"); return end
+            mod:SetSize(n)
+            Deadpool:Print("CC Tracker size: " .. n)
+        elseif sub == "reset" then
+            Deadpool.db.settings.ccTrackerPos = nil
+            if mod.frame then
+                mod.frame:ClearAllPoints()
+                mod.frame:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+            end
+            Deadpool:Print("CC Tracker position reset.")
+        else
+            Deadpool:Print("Usage: /dp cc [toggle|lock|preview|size <n>|reset]")
         end
     elseif cmd == "score" or cmd == "leaderboard" or cmd == "lb" then
         Deadpool:ShowTab("scoreboard")
@@ -716,6 +857,9 @@ function Deadpool:PrintHelp()
     self:Print("/dp " .. self.colors.yellow .. "score|r — Show scoreboard")
     self:Print("/dp " .. self.colors.yellow .. "log|r — Show kill log")
     self:Print("/dp " .. self.colors.yellow .. "sync|r — Force guild sync")
+    self:Print("/dp " .. self.colors.yellow .. "arena|r — Open Arena Analytics popout (or /aa)")
+    self:Print("/dp " .. self.colors.yellow .. "cc|r — Toggle CC tracker (lock | preview | size <n> | reset)")
+    self:Print("/dp " .. self.colors.yellow .. "dr|r — Toggle DR tracker (lock | preview | scale <n> | reset)")
     self:Print("/dp " .. self.colors.yellow .. "help|r — This help")
 end
 
@@ -828,8 +972,8 @@ function Deadpool:Init()
         end)
     end
 
-    -- Initialize modules in dependency order (Theme before UI)
-    local initOrder = { "Theme", "KillManager", "KillTracker", "Quests", "Achievements", "Sync", "Nearby", "UI", "Alerts" }
+    -- Initialize modules in dependency order (Theme before UI, ArenaAnalytics after KillTracker so it can wrap CaptureArenaResult)
+    local initOrder = { "Theme", "KillManager", "KillTracker", "Quests", "Achievements", "Sync", "Nearby", "UI", "ArenaAnalytics", "CCTracker", "DRTracker", "Alerts" }
     for _, name in ipairs(initOrder) do
         local mod = self.modules[name]
         if mod and mod.Init then
